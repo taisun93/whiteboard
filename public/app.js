@@ -5,11 +5,16 @@ const statusEl = document.getElementById('status');
 // Server-authoritative: strokes in seq order. Optimistic: pending by strokeId.
 const strokes = [];
 const pending = new Map();
+// Other users' cursors: clientId -> { x, y } (canvas coords)
+const otherCursors = new Map();
 
 let ws = null;
 let drawing = false;
 let currentPoints = [];
 let currentStrokeId = null;
+let cursorThrottle = 0;
+const CURSOR_THROTTLE_MS = 50;
+let myClientId = null;
 
 function connect() {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -24,7 +29,16 @@ function connect() {
     setTimeout(connect, 2000);
   };
   ws.onmessage = (e) => {
-    const msg = JSON.parse(e.data);
+    let msg;
+    try {
+      msg = JSON.parse(e.data);
+    } catch {
+      return;
+    }
+    if (msg.type === 'ME') {
+      myClientId = msg.clientId;
+      return;
+    }
     if (msg.type === 'STATE') {
       strokes.length = 0;
       (msg.strokes || []).forEach((s) => strokes.push(s));
@@ -39,6 +53,20 @@ function connect() {
         strokes.push(stroke);
         strokes.sort((a, b) => a.seq - b.seq);
       }
+      draw();
+    } else if (msg.type === 'CURSORS') {
+      otherCursors.clear();
+      (msg.cursors || []).forEach(({ clientId, x, y }) => {
+        if (clientId !== myClientId) otherCursors.set(clientId, { x, y });
+      });
+      draw();
+    } else if (msg.type === 'CURSOR_MOVE') {
+      if (msg.clientId !== myClientId) {
+        otherCursors.set(msg.clientId, { x: msg.x, y: msg.y });
+        draw();
+      }
+    } else if (msg.type === 'CURSOR_LEFT') {
+      otherCursors.delete(msg.clientId);
       draw();
     }
   };
@@ -71,6 +99,22 @@ function draw() {
     for (let i = 1; i < points.length; i++) ctx.lineTo(points[i].x, points[i].y);
     ctx.stroke();
   });
+
+  // Other users' cursors
+  otherCursors.forEach((pos, clientId) => {
+    if (typeof pos.x !== 'number' || typeof pos.y !== 'number' || Number.isNaN(pos.x) || Number.isNaN(pos.y)) return;
+    ctx.fillStyle = '#f59e0b';
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(pos.x, pos.y, 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.font = '11px system-ui';
+    ctx.fillStyle = '#fff';
+    ctx.fillText(clientId, pos.x + 12, pos.y + 4);
+  });
+
 }
 
 function toCanvasCoords(e) {
@@ -90,9 +134,19 @@ canvas.addEventListener('pointerdown', (e) => {
 });
 
 canvas.addEventListener('pointermove', (e) => {
-  if (!drawing || !currentStrokeId) return;
-  currentPoints.push(toCanvasCoords(e));
-  pending.set(currentStrokeId, [...currentPoints]);
+  const pt = toCanvasCoords(e);
+  if (drawing && currentStrokeId) {
+    currentPoints.push(pt);
+    pending.set(currentStrokeId, [...currentPoints]);
+  }
+  // Broadcast cursor position (throttled) when over canvas
+  if (ws && ws.readyState === 1) {
+    const now = Date.now();
+    if (now - cursorThrottle >= CURSOR_THROTTLE_MS) {
+      cursorThrottle = now;
+      ws.send(JSON.stringify({ type: 'CURSOR_MOVE', x: pt.x, y: pt.y }));
+    }
+  }
   draw();
 });
 
@@ -108,7 +162,11 @@ canvas.addEventListener('pointerup', (e) => {
 });
 
 canvas.addEventListener('pointerleave', () => {
-  if (!drawing || !currentStrokeId) return;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'CURSOR_LEFT' }));
+  if (!drawing || !currentStrokeId) {
+    draw();
+    return;
+  }
   drawing = false;
   if (currentPoints.length >= 2 && ws && ws.readyState === 1) {
     ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId: currentStrokeId, points: currentPoints }));

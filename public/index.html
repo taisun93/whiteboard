@@ -6,18 +6,21 @@
   <title>Whiteboard Sync</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; background: #1a1a2e; color: #eee; font: 14px/1.4 system-ui, sans-serif; }
+    body { margin: 0; background: #1a1a2e; color: #eee; font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
     #toolbar { padding: 8px 12px; background: #16213e; display: flex; align-items: center; gap: 12px; }
     #status { color: #888; }
     #status.connected { color: #4ade80; }
-    canvas { display: block; cursor: crosshair; background: #0f0f1a; }
+    #board-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+    canvas { display: block; cursor: crosshair; background: #0f0f1a; flex: 1; width: 100%; max-height: calc(100vh - 42px); object-fit: contain; }
   </style>
 </head>
 <body>
   <div id="toolbar">
     <span id="status">Connecting…</span>
   </div>
-  <canvas id="c" width="800" height="500"></canvas>
+  <div id="board-wrap">
+    <canvas id="c" width="800" height="500"></canvas>
+  </div>
   <script src="app.js"></script>
 </body>
 </html>
