@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Whiteboard Sync</title>
+  <style>
+    * { box-sizing: border-box; }
+    body { margin: 0; background: #1a1a2e; color: #eee; font: 14px/1.4 system-ui, sans-serif; }
+    #toolbar { padding: 8px 12px; background: #16213e; display: flex; align-items: center; gap: 12px; }
+    #status { color: #888; }
+    #status.connected { color: #4ade80; }
+    canvas { display: block; cursor: crosshair; background: #0f0f1a; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <span id="status">Connecting…</span>
+  </div>
+  <canvas id="c" width="800" height="500"></canvas>
+  <script src="app.js"></script>
+</body>
+</html>
