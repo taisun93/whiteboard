@@ -7,7 +7,7 @@ const strokes = [];
 const pending = new Map();
 // Other users' cursors: clientId -> { x, y } (world coords)
 const otherCursors = new Map();
-// Online user ids (e.g. ['u0', 'u1', 'u2'])
+// Online users: [{ clientId, username }, ...]
 let onlineUsers = [];
 // Sticky notes: { id, x, y, width, height, text } in world coordinates
 const stickies = [];
@@ -155,10 +155,10 @@ function renderUsersList() {
   const el = document.getElementById('users-list');
   if (!el) return;
   el.textContent = '';
-  onlineUsers.forEach((id) => {
+  onlineUsers.forEach((u) => {
     const span = document.createElement('span');
-    span.textContent = id;
-    if (id === myClientId) span.style.fontWeight = 'bold';
+    span.textContent = u.username || u.clientId || '—';
+    if (u.clientId === myClientId) span.style.fontWeight = 'bold';
     el.appendChild(span);
   });
   if (onlineUsers.length === 0) {
@@ -292,6 +292,8 @@ function draw() {
   otherCursors.forEach((pos, clientId) => {
     if (typeof pos.x !== 'number' || typeof pos.y !== 'number' || Number.isNaN(pos.x) || Number.isNaN(pos.y)) return;
     const c = worldToCanvas(pos.x, pos.y);
+    const u = onlineUsers.find((x) => x.clientId === clientId);
+    const label = u ? u.username : clientId;
     ctx.fillStyle = '#f59e0b';
     ctx.strokeStyle = '#fff';
     ctx.lineWidth = 1.5;
@@ -301,7 +303,7 @@ function draw() {
     ctx.stroke();
     ctx.font = '11px system-ui';
     ctx.fillStyle = '#fff';
-    ctx.fillText(clientId, c.x + 12, c.y + 4);
+    ctx.fillText(label, c.x + 12, c.y + 4);
   });
 }
 

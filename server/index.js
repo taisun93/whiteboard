@@ -1,9 +1,60 @@
 const express = require('express');
 const { WebSocketServer } = require('ws');
 const path = require('path');
+const crypto = require('crypto');
 
 const app = express();
+app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// Auth: in-memory (no register yet). Passwords plain for dev seed only.
+const users = new Map([
+  ['alice', 'alice123'],
+  ['bob', 'bob123']
+]);
+const sessions = new Map(); // sessionId -> { username }
+
+function parseCookie(header) {
+  const out = {};
+  if (!header) return out;
+  header.split(';').forEach((s) => {
+    const i = s.indexOf('=');
+    if (i > 0) out[s.slice(0, i).trim()] = s.slice(i + 1).trim();
+  });
+  return out;
+}
+
+app.post('/api/login', (req, res) => {
+  const { username, password } = req.body || {};
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password required' });
+  }
+  const stored = users.get(String(username).toLowerCase());
+  if (!stored || stored !== password) {
+    return res.status(401).json({ error: 'Invalid username or password' });
+  }
+  const sessionId = crypto.randomBytes(16).toString('hex');
+  sessions.set(sessionId, { username: String(username).toLowerCase() });
+  res.cookie('session', sessionId, { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 });
+  res.json({ ok: true, user: { username: String(username).toLowerCase() } });
+});
+
+app.get('/api/me', (req, res) => {
+  const cookies = parseCookie(req.headers.cookie);
+  const sessionId = cookies.session;
+  const session = sessionId ? sessions.get(sessionId) : null;
+  if (!session) {
+    return res.status(401).json({ error: 'Not logged in' });
+  }
+  res.json({ user: { username: session.username } });
+});
+
+app.post('/api/logout', (req, res) => {
+  const cookies = parseCookie(req.headers.cookie);
+  if (cookies.session) sessions.delete(cookies.session);
+  res.clearCookie('session');
+  res.json({ ok: true });
+});
 
 const PORT = process.env.PORT || 3000;
 const server = app.listen(PORT, () => {
@@ -23,12 +74,15 @@ const wss = new WebSocketServer({ server });
 const cursors = new Map();
 let nextClientId = 0;
 
-wss.on('connection', (ws) => {
+wss.on('connection', (ws, req) => {
+  const cookies = parseCookie(req.headers.cookie);
+  const session = cookies.session ? sessions.get(cookies.session) : null;
+  ws.username = session ? session.username : 'anonymous';
+
   const clientId = `u${nextClientId++}`;
   ws.clientId = clientId;
 
-  // Tell client their id (so they can ignore their own cursor in "others")
-  ws.send(JSON.stringify({ type: 'ME', clientId }));
+  ws.send(JSON.stringify({ type: 'ME', clientId, username: ws.username }));
   // Send full state to new client
   ws.send(JSON.stringify({ type: 'STATE', strokes, stickies }));
   ws.send(JSON.stringify({ type: 'SEQ', nextSeq }));
@@ -167,11 +221,11 @@ wss.on('connection', (ws) => {
 });
 
 function broadcastUsers() {
-  const userIds = Array.from(wss.clients)
+  const userList = Array.from(wss.clients)
     .filter((c) => c.readyState === 1)
-    .map((c) => c.clientId)
-    .sort();
-  const payload = JSON.stringify({ type: 'USERS', users: userIds });
+    .map((c) => ({ clientId: c.clientId, username: c.username || 'anonymous' }))
+    .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+  const payload = JSON.stringify({ type: 'USERS', users: userList });
   wss.clients.forEach((c) => {
     if (c.readyState === 1) c.send(payload);
   });

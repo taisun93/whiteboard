@@ -29,9 +29,31 @@
     #sidebar h2 { margin: 0 0 10px 0; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
     #users-list { display: flex; flex-direction: column; gap: 6px; }
     #users-list span { background: #1e293b; padding: 6px 10px; border-radius: 4px; font-size: 13px; color: #e2e8f0; }
+    #login-screen { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: #1a1a2e; }
+    #login-box { background: #16213e; padding: 32px; border-radius: 12px; border: 1px solid #1e293b; width: 280px; }
+    #login-box h1 { margin: 0 0 24px 0; font-size: 18px; color: #e2e8f0; }
+    #login-box input { width: 100%; padding: 10px 12px; margin-bottom: 12px; border: 1px solid #1e293b; border-radius: 6px; background: #0f0f1a; color: #eee; font-size: 14px; box-sizing: border-box; }
+    #login-box input::placeholder { color: #64748b; }
+    #login-box button { width: 100%; padding: 10px; border: none; border-radius: 6px; background: #3b82f6; color: #fff; font-size: 14px; cursor: pointer; }
+    #login-box button:hover { background: #2563eb; }
+    #login-error { margin-top: 12px; color: #f87171; font-size: 13px; }
+    #app { display: none; flex-direction: column; min-height: 100vh; }
+    #app.logged-in { display: flex; }
   </style>
 </head>
 <body>
+  <div id="login-screen">
+    <div id="login-box">
+      <h1>Log in</h1>
+      <form id="login-form">
+        <input type="text" name="username" placeholder="Username" required autocomplete="username" />
+        <input type="password" name="password" placeholder="Password" required autocomplete="current-password" />
+        <button type="submit">Log in</button>
+      </form>
+      <div id="login-error" aria-live="polite"></div>
+    </div>
+  </div>
+  <div id="app">
   <div id="toolbar">
     <span id="status">Connecting…</span>
   </div>
@@ -53,6 +75,47 @@
       <div id="users-list"></div>
     </aside>
   </div>
-  <script src="app.js"></script>
+  </div>
+  <script>
+    (function() {
+      var loginScreen = document.getElementById('login-screen');
+      var appEl = document.getElementById('app');
+      var loginForm = document.getElementById('login-form');
+      var loginError = document.getElementById('login-error');
+      function showApp() {
+        loginScreen.style.display = 'none';
+        appEl.classList.add('logged-in');
+        var s = document.createElement('script');
+        s.src = 'app.js';
+        document.body.appendChild(s);
+      }
+      function showLogin() {
+        loginScreen.style.display = 'flex';
+        appEl.classList.remove('logged-in');
+      }
+      fetch('/api/me', { credentials: 'include' })
+        .then(function(r) {
+          if (r.ok) return r.json().then(function(data) { showApp(); });
+          showLogin();
+        })
+        .catch(function() { showLogin(); });
+      loginForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        loginError.textContent = '';
+        var fd = new FormData(loginForm);
+        fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ username: fd.get('username'), password: fd.get('password') })
+        })
+          .then(function(r) {
+            if (r.ok) { loginError.textContent = ''; showApp(); return; }
+            return r.json().then(function(d) { loginError.textContent = d.error || 'Login failed'; });
+          })
+          .catch(function() { loginError.textContent = 'Login failed'; });
+      });
+    })();
+  </script>
 </body>
 </html>
