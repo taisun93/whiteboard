@@ -13,8 +13,22 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, '..', 'public')));
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
 const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
-const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
-const REDIRECT_URI = BASE_URL.replace(/\/$/, '') + '/api/auth/google/callback';
+const BASE_URL = process.env.BASE_URL || '';
+
+/** Base URL for redirects: env BASE_URL, or derived from request (supports proxies via X-Forwarded-*). Normalized so it matches Google Console redirect URIs (no default ports). */
+function getRedirectBase(req) {
+  if (BASE_URL) return BASE_URL.replace(/\/$/, '');
+  let proto = (req.get('x-forwarded-proto') || req.protocol || 'http').split(',')[0].trim().toLowerCase();
+  let host = (req.get('x-forwarded-host') || req.get('host') || 'localhost:3000').split(',')[0].trim();
+  if (host.endsWith(':80') && proto === 'http') host = host.slice(0, -3);
+  if (host.endsWith(':443') && proto === 'https') host = host.slice(0, -4);
+  return `${proto}://${host}`.replace(/\/$/, '');
+}
+
+function getRedirectUri(req) {
+  const base = getRedirectBase(req);
+  return base + '/api/auth/google/callback';
+}
 
 function parseCookie(header) {
   const out = {};
@@ -96,9 +110,10 @@ app.get('/api/auth/google', (req, res) => {
   }
   const state = crypto.randomBytes(16).toString('hex');
   res.cookie('auth_state', state, { httpOnly: true, sameSite: 'lax', maxAge: 10 * 60 * 1000 });
+  const redirectUri = getRedirectUri(req);
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     response_type: 'code',
     scope: 'openid email profile',
     state
@@ -117,11 +132,12 @@ app.get('/api/auth/google/callback', (req, res) => {
   if (!GOOGLE_CLIENT_ID || !GOOGLE_CLIENT_SECRET) {
     return res.redirect(302, '/?error=config');
   }
+  const redirectUri = getRedirectUri(req);
   const tokenBody = {
     code,
     client_id: GOOGLE_CLIENT_ID,
     client_secret: GOOGLE_CLIENT_SECRET,
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri,
     grant_type: 'authorization_code'
   };
   httpsPost('https://oauth2.googleapis.com/token', tokenBody)

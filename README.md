@@ -5,7 +5,9 @@ Real-time sync with **server-authoritative ordering** and **optimistic UI**. Aut
 ## Setup
 
 1. Create [Google OAuth 2.0 credentials](https://console.cloud.google.com/apis/credentials) (Web application).
-2. Add authorized redirect URI: `http://localhost:3000/api/auth/google/callback` (use your production URL in prod).
+2. Add **Authorized redirect URIs** (APIs & Services → Credentials → your OAuth client → Authorized redirect URIs):
+   - Local: `http://localhost:3000/api/auth/google/callback`
+   - Production: `https://your-production-domain.com/api/auth/google/callback` (exact URL, no trailing slash)
 3. Copy `.env.example` to `.env` and set `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET`.
 
 ## Run
@@ -25,13 +27,27 @@ You **don’t** upload a `.env` file. Set everything in the Render dashboard.
 2. **Create a PostgreSQL** instance in the same Render project. In the Web Service → **Environment**, add:
    - **DATABASE_URL** — copy from the Postgres service (Internal Database URL).
    - **GOOGLE_CLIENT_ID** / **GOOGLE_CLIENT_SECRET** — same values you use locally.
-   - **BASE_URL** — your app URL, e.g. `https://your-app-name.onrender.com` (no trailing slash). Required so Google redirects back to the right host.
+   - **BASE_URL** — optional. Your app URL, e.g. `https://your-app-name.onrender.com` (no trailing slash). If unset, the app derives it from the request; set it if you get "This app's request is invalid".
    - **OPENAI_API_KEY** — optional; only if you use AI commands.
 3. **Google Cloud Console**: In your OAuth 2.0 client, add an **Authorized redirect URI**:  
    `https://your-app-name.onrender.com/api/auth/google/callback`  
    (replace with your real Render URL.)
 
 After deploy, the app will create the DB tables on first run. Sessions and board state persist across restarts.
+
+## Troubleshooting: "Access blocked: This app's request is invalid"
+
+This usually means the **redirect URI** Google received doesn’t match your **Authorized redirect URIs** in Google Cloud Console.
+
+1. **Add the exact redirect URI in Google Console**  
+   APIs & Services → Credentials → your OAuth 2.0 Client ID → **Authorized redirect URIs**.  
+   Add: `https://<your-live-host>/api/auth/google/callback` (same protocol, host, and path as your app; no trailing slash).
+
+2. **Force a known URL with BASE_URL**  
+   If your host sends an unexpected Host/Proto, set **BASE_URL** in your environment to your real app URL (e.g. `https://your-app.onrender.com`). The redirect URI will then be `BASE_URL` + `/api/auth/google/callback`. Add that exact string in Google Console.
+
+3. **App in Testing mode**  
+   If the OAuth consent screen is in "Testing", add your Google account under **Test users** so you can sign in.
 
 ## How it works
 
