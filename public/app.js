@@ -482,6 +482,16 @@ function renderStickies() {
     el.style.top = `${contentTop + pos.y * scale}px`;
     el.style.width = `${w * scale}px`;
     el.style.height = `${h * scale}px`;
+    const body = el.querySelector('.sticky-body');
+    const header = el.querySelector('.sticky-header');
+    const fs = Math.max(9, 13 / zoom);
+    const pad = Math.max(4, 6 / zoom);
+    if (body) {
+      body.style.fontSize = `${fs}px`;
+      body.style.lineHeight = 1.4;
+      body.style.padding = `${pad}px ${Math.max(6, 8 / zoom)}px`;
+    }
+    if (header) header.style.padding = `${Math.max(2, 2 / zoom)}px ${pad}px`;
   });
   existing.forEach((id) => {
     const el = layer.querySelector(`[data-id="${id}"]`);
@@ -604,6 +614,9 @@ function renderTextElements() {
     div.style.top = `${contentTop + pos.y * scale}px`;
     div.style.width = `${w * scale}px`;
     div.style.minHeight = `${h * scale}px`;
+    const fs = Math.max(10, 14 / zoom);
+    div.style.fontSize = `${fs}px`;
+    div.style.padding = `${Math.max(4, 4 / zoom)}px ${Math.max(6, 8 / zoom)}px`;
     const content = div.querySelector('.text-content');
     if (content && document.activeElement !== content) content.textContent = el.text || '';
   });

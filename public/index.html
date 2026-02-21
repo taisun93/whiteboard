@@ -11,19 +11,33 @@
     #status { color: #888; }
     #status.connected { color: #4ade80; }
     #main { flex: 1; display: flex; min-height: 0; }
-    #tool-menu { width: 96px; background: #16213e; border-right: 1px solid #1e293b; padding: 10px; display: flex; flex-direction: column; gap: 6px; flex-shrink: 0; }
-    #tool-menu button { padding: 10px; border: none; border-radius: 6px; background: #1e293b; color: #94a3b8; font-size: 12px; cursor: pointer; transition: background 0.15s, color 0.15s; }
-    #tool-menu button:hover { background: #334155; color: #e2e8f0; }
-    #tool-menu button.active { background: #3b82f6; color: #fff; }
-    #tool-menu .color-section { margin-top: 8px; }
-    #tool-menu .color-section label { display: block; font-size: 10px; color: #94a3b8; margin-bottom: 4px; text-transform: uppercase; }
-    #tool-menu .color-swatches { display: flex; flex-wrap: wrap; gap: 4px; }
-    #tool-menu .color-swatch { width: 22px; height: 22px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; }
-    #tool-menu .color-swatch:hover { border-color: #64748b; }
-    #tool-menu .color-swatch.active { border-color: #fff; box-shadow: 0 0 0 1px #1e293b; }
-    #tool-menu .color-hex { margin-top: 6px; width: 100%; padding: 6px 8px; font-size: 11px; font-family: monospace; background: #1e293b; border: 1px solid #334155; border-radius: 4px; color: #e2e8f0; }
+    #tool-menu {
+      position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+      width: 48px; z-index: 20;
+      display: flex; flex-direction: column; align-items: center; gap: 0;
+      padding: 8px 0;
+      background: #f8fafc; border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
+    }
+    #tool-menu .palette-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+    #tool-menu .palette-sep { width: 28px; height: 1px; background: #e2e8f0; margin: 6px 0; border: none; }
+    #tool-menu button.tool-btn {
+      width: 40px; height: 40px; padding: 0; border: none; border-radius: 10px;
+      background: transparent; color: #475569; cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      transition: background 0.15s, color 0.15s;
+    }
+    #tool-menu button.tool-btn:hover { background: #e2e8f0; color: #1e293b; }
+    #tool-menu button.tool-btn.active { background: #3b82f6; color: #fff; }
+    #tool-menu button.tool-btn svg { width: 22px; height: 22px; display: block; }
+    #tool-menu .color-section { margin-top: 4px; padding-top: 6px; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    #tool-menu .color-swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 48px; }
+    #tool-menu .color-swatch { width: 18px; height: 18px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; flex-shrink: 0; }
+    #tool-menu .color-swatch:hover { border-color: #94a3b8; }
+    #tool-menu .color-swatch.active { border-color: #1e293b; box-shadow: 0 0 0 1px #f8fafc; }
+    #tool-menu .color-hex { width: 40px; padding: 4px 6px; font-size: 10px; font-family: monospace; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; color: #334155; text-align: center; }
     #tool-menu .color-hex:focus { outline: none; border-color: #3b82f6; }
-    #tool-menu .color-hex::placeholder { color: #64748b; }
+    #tool-menu .color-hex::placeholder { color: #94a3b8; }
     #board-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
     #board-inner { flex: 1; position: relative; min-height: 0; display: flex; }
     #board-inner canvas { display: block; cursor: crosshair; background: #0f0f1a; flex: 1; width: 100%; height: 100%; object-fit: contain; }
@@ -124,24 +138,35 @@
     <span id="status">Connecting…</span>
   </div>
   <div id="main">
-    <nav id="tool-menu">
-      <button type="button" id="tool-draw" class="active">Draw</button>
-      <button type="button" id="tool-erase">Erase</button>
-      <button type="button" id="tool-sticky">Note</button>
-      <button type="button" id="tool-move" class="tool-hand" title="Hand: drag an object to move it, drag empty space to pan the board">✋ Hand</button>
-      <button type="button" id="tool-frame">Frame</button>
-      <button type="button" id="tool-fill">Fill</button>
-      <button type="button" id="tool-rect">Rect</button>
-      <button type="button" id="tool-circle">Circle</button>
-      <button type="button" id="tool-arrow">Arrow</button>
-      <button type="button" id="tool-text">Text</button>
+    <div id="board-wrap">
+    <nav id="tool-menu" aria-label="Tools">
+      <div class="palette-group">
+        <button type="button" id="tool-draw" class="tool-btn active" title="Draw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg></button>
+        <button type="button" id="tool-erase" class="tool-btn" title="Erase"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16c-1-1 1.5-4 2-4h5l2-2h6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1z"/></svg></button>
+        <button type="button" id="tool-fill" class="tool-btn" title="Fill color"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 11V8a2 2 0 0 0-2-2h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2z"/><path d="M5 11V8a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/></svg></button>
+      </div>
+      <hr class="palette-sep" aria-hidden="true" />
+      <div class="palette-group">
+        <button type="button" id="tool-move" class="tool-btn" title="Hand: drag objects to move, drag empty space to pan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3"/></svg></button>
+      </div>
+      <hr class="palette-sep" aria-hidden="true" />
+      <div class="palette-group">
+        <button type="button" id="tool-sticky" class="tool-btn" title="Sticky note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="M16 13H8"/><path d="M16 17H8"/></svg></button>
+        <button type="button" id="tool-text" class="tool-btn" title="Text"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V4h16v3"/><path d="M9 20h6"/><path d="M12 4v16"/></svg></button>
+        <button type="button" id="tool-frame" class="tool-btn" title="Frame"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18"/><path d="M3 15h18"/><path d="M9 3v18"/><path d="M15 3v18"/></svg></button>
+      </div>
+      <hr class="palette-sep" aria-hidden="true" />
+      <div class="palette-group">
+        <button type="button" id="tool-rect" class="tool-btn" title="Rectangle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
+        <button type="button" id="tool-circle" class="tool-btn" title="Circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></button>
+        <button type="button" id="tool-arrow" class="tool-btn" title="Arrow / Connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg></button>
+      </div>
+      <hr class="palette-sep" aria-hidden="true" />
       <div class="color-section">
-        <label>Color</label>
         <div id="color-swatches" class="color-swatches"></div>
-        <input type="text" id="color-hex" class="color-hex" placeholder="#rrggbb" maxlength="7" />
+        <input type="text" id="color-hex" class="color-hex" placeholder="#" maxlength="7" title="Hex color" aria-label="Hex color" />
       </div>
     </nav>
-    <div id="board-wrap">
       <div id="board-inner">
         <canvas id="c" width="800" height="500"></canvas>
         <div id="stickies-layer"></div>

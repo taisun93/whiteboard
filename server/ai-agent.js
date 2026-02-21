@@ -138,7 +138,9 @@ function getBoundModel() {
   return getModel().bindTools(tools);
 }
 
-const SYSTEM_PROMPT = `You are an assistant that helps users edit a shared whiteboard. The user will give you a natural language command. Use the available tools to change the board. Coordinates and sizes are in world units (e.g. 100, 200). When creating objects, use reasonable positions (e.g. 50-400 for x,y).
+const SYSTEM_PROMPT = `You are an assistant that helps users edit a shared whiteboard. The user will give you a natural language command. Use the available tools to change the board. Coordinates and sizes are in world units (e.g. 100, 200).
+
+Avoiding overlap: When creating new elements (stickies, frames, shapes, text), avoid placing them on top of existing content. You receive board state (stickies, textElements, frames, strokes with id, x, y, width, height). Before calling createStickyNote, createFrame, createShape, or adding text, check where existing items are. Choose x,y so the new object's bounding box does not overlap existing items—leave at least 20–40 units of space between the new element and any existing stickies, frames, text, or shapes. If the board already has content, place new items to the right, below, or in a clear empty region. When creating multiple items (e.g. a template), space them in a grid with gaps (e.g. 20–30 units) so they do not overlap each other or existing content.
 
 Templates and multi-item layouts:
 - When the user asks for a "SWOT analysis", "four quadrants", "2x2 matrix", "quadrant template", or similar, use createQuadrantTemplate exactly once with four titles. For SWOT use: title1="Strengths", title2="Weaknesses", title3="Opportunities", title4="Threats" (in that order). Use a single createQuadrantTemplate call; do not create four separate frames.
