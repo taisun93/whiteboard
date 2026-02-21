@@ -485,14 +485,15 @@ function renderStickies() {
     const body = el.querySelector('.sticky-body');
     const header = el.querySelector('.sticky-header');
     const dispH = h * scale;
-    const fs = Math.max(9, dispH * 0.14);
-    const pad = Math.max(3, dispH * 0.04);
+    const dispW = w * scale;
+    const fs = Math.max(5, dispH * 0.14);
+    const pad = Math.max(2, dispH * 0.04);
     if (body) {
       body.style.fontSize = `${fs}px`;
       body.style.lineHeight = 1.4;
-      body.style.padding = `${pad}px ${Math.max(4, dispH * 0.05)}px`;
+      body.style.padding = `${pad}px ${Math.max(3, dispW * 0.04)}px`;
     }
-    if (header) header.style.padding = `${Math.max(2, pad * 0.5)}px ${pad}px`;
+    if (header) header.style.padding = `${Math.max(1, pad * 0.5)}px ${pad}px`;
   });
   existing.forEach((id) => {
     const el = layer.querySelector(`[data-id="${id}"]`);
@@ -616,9 +617,11 @@ function renderTextElements() {
     div.style.width = `${w * scale}px`;
     div.style.minHeight = `${h * scale}px`;
     const dispH = h * scale;
-    const fs = Math.max(10, dispH * 0.5);
+    const dispW = w * scale;
+    const fs = Math.max(6, dispH * 0.55);
     div.style.fontSize = `${fs}px`;
-    div.style.padding = `${Math.max(3, dispH * 0.12)}px ${Math.max(4, dispH * 0.06)}px`;
+    div.style.lineHeight = 1.25;
+    div.style.padding = `${Math.max(2, dispH * 0.1)}px ${Math.max(3, dispW * 0.05)}px`;
     const content = div.querySelector('.text-content');
     if (content && document.activeElement !== content) content.textContent = el.text || '';
   });
