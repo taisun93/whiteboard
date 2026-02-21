@@ -484,14 +484,15 @@ function renderStickies() {
     el.style.height = `${h * scale}px`;
     const body = el.querySelector('.sticky-body');
     const header = el.querySelector('.sticky-header');
-    const fs = Math.max(9, 13 / zoom);
-    const pad = Math.max(4, 6 / zoom);
+    const dispH = h * scale;
+    const fs = Math.max(9, dispH * 0.14);
+    const pad = Math.max(3, dispH * 0.04);
     if (body) {
       body.style.fontSize = `${fs}px`;
       body.style.lineHeight = 1.4;
-      body.style.padding = `${pad}px ${Math.max(6, 8 / zoom)}px`;
+      body.style.padding = `${pad}px ${Math.max(4, dispH * 0.05)}px`;
     }
-    if (header) header.style.padding = `${Math.max(2, 2 / zoom)}px ${pad}px`;
+    if (header) header.style.padding = `${Math.max(2, pad * 0.5)}px ${pad}px`;
   });
   existing.forEach((id) => {
     const el = layer.querySelector(`[data-id="${id}"]`);
@@ -614,9 +615,10 @@ function renderTextElements() {
     div.style.top = `${contentTop + pos.y * scale}px`;
     div.style.width = `${w * scale}px`;
     div.style.minHeight = `${h * scale}px`;
-    const fs = Math.max(10, 14 / zoom);
+    const dispH = h * scale;
+    const fs = Math.max(10, dispH * 0.5);
     div.style.fontSize = `${fs}px`;
-    div.style.padding = `${Math.max(4, 4 / zoom)}px ${Math.max(6, 8 / zoom)}px`;
+    div.style.padding = `${Math.max(3, dispH * 0.12)}px ${Math.max(4, dispH * 0.06)}px`;
     const content = div.querySelector('.text-content');
     if (content && document.activeElement !== content) content.textContent = el.text || '';
   });
@@ -1513,6 +1515,8 @@ function setSelectedColor(hex) {
       b.classList.toggle('active', b.style.background === hex);
     });
   }
+  const currentEl = document.getElementById('color-current');
+  if (currentEl) currentEl.style.background = hex;
 }
 
 function renderColorSwatches() {
@@ -1525,7 +1529,11 @@ function renderColorSwatches() {
     btn.className = 'color-swatch' + (selectedColor === hex ? ' active' : '');
     btn.style.background = hex;
     btn.title = hex;
-    btn.addEventListener('click', () => setSelectedColor(hex));
+    btn.addEventListener('click', () => {
+      setSelectedColor(hex);
+      const section = document.getElementById('color-section');
+      if (section) section.classList.remove('expanded');
+    });
     el.appendChild(btn);
   });
   const hexEl = document.getElementById('color-hex');
@@ -1542,6 +1550,8 @@ function renderColorSwatches() {
       const parsed = parseHex(hexEl.value);
       if (parsed) {
         setSelectedColor(parsed);
+        const section = document.getElementById('color-section');
+        if (section) section.classList.remove('expanded');
       } else {
         hexEl.value = selectedColor;
       }
@@ -1549,6 +1559,12 @@ function renderColorSwatches() {
   }
 }
 renderColorSwatches();
+const colorCurrentBtn = document.getElementById('color-current');
+const colorSectionEl = document.getElementById('color-section');
+if (colorCurrentBtn && colorSectionEl) {
+  colorCurrentBtn.style.background = selectedColor;
+  colorCurrentBtn.addEventListener('click', () => colorSectionEl.classList.toggle('expanded'));
+}
 
 document.addEventListener('keydown', (e) => {
   if (e.code === 'Space') spaceKey = true;

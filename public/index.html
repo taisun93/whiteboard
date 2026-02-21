@@ -31,6 +31,10 @@
     #tool-menu button.tool-btn.active { background: #3b82f6; color: #fff; }
     #tool-menu button.tool-btn svg { width: 22px; height: 22px; display: block; }
     #tool-menu .color-section { margin-top: 4px; padding-top: 6px; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    #tool-menu .color-current { width: 32px; height: 32px; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; }
+    #tool-menu .color-current:hover { border-color: #94a3b8; }
+    #tool-menu .color-expanded { display: none; flex-direction: column; align-items: center; gap: 6px; }
+    #tool-menu .color-section.expanded .color-expanded { display: flex; }
     #tool-menu .color-swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 48px; }
     #tool-menu .color-swatch { width: 18px; height: 18px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; flex-shrink: 0; }
     #tool-menu .color-swatch:hover { border-color: #94a3b8; }
@@ -162,9 +166,12 @@
         <button type="button" id="tool-arrow" class="tool-btn" title="Arrow / Connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg></button>
       </div>
       <hr class="palette-sep" aria-hidden="true" />
-      <div class="color-section">
-        <div id="color-swatches" class="color-swatches"></div>
-        <input type="text" id="color-hex" class="color-hex" placeholder="#" maxlength="7" title="Hex color" aria-label="Hex color" />
+      <div class="color-section" id="color-section">
+        <button type="button" id="color-current" class="color-current" title="Click to change color" aria-label="Current color; click to change"></button>
+        <div class="color-expanded">
+          <div id="color-swatches" class="color-swatches"></div>
+          <input type="text" id="color-hex" class="color-hex" placeholder="#" maxlength="7" title="Hex color" aria-label="Hex color" />
+        </div>
       </div>
     </nav>
       <div id="board-inner">
