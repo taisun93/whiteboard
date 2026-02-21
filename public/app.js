@@ -486,12 +486,12 @@ function renderStickies() {
     const header = el.querySelector('.sticky-header');
     const dispH = h * scale;
     const dispW = w * scale;
-    const fs = Math.max(5, dispH * 0.14);
-    const pad = Math.max(2, dispH * 0.04);
+    const fs = Math.max(2, dispH * 0.12);
+    const pad = Math.max(1, dispH * 0.04);
     if (body) {
       body.style.fontSize = `${fs}px`;
       body.style.lineHeight = 1.4;
-      body.style.padding = `${pad}px ${Math.max(3, dispW * 0.04)}px`;
+      body.style.padding = `${pad}px ${Math.max(2, dispW * 0.04)}px`;
     }
     if (header) header.style.padding = `${Math.max(1, pad * 0.5)}px ${pad}px`;
   });
@@ -618,10 +618,10 @@ function renderTextElements() {
     div.style.minHeight = `${h * scale}px`;
     const dispH = h * scale;
     const dispW = w * scale;
-    const fs = Math.max(6, dispH * 0.55);
+    const fs = Math.max(2, dispH * 0.5);
     div.style.fontSize = `${fs}px`;
     div.style.lineHeight = 1.25;
-    div.style.padding = `${Math.max(2, dispH * 0.1)}px ${Math.max(3, dispW * 0.05)}px`;
+    div.style.padding = `${Math.max(1, dispH * 0.1)}px ${Math.max(2, dispW * 0.05)}px`;
     const content = div.querySelector('.text-content');
     if (content && document.activeElement !== content) content.textContent = el.text || '';
   });

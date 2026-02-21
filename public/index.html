@@ -31,9 +31,9 @@
     #tool-menu button.tool-btn.active { background: #3b82f6; color: #fff; }
     #tool-menu button.tool-btn svg { width: 22px; height: 22px; display: block; }
     #tool-menu .color-section { margin-top: 4px; padding-top: 6px; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-    #tool-menu .color-current { width: 32px; height: 32px; border: 2px solid #e2e8f0; border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; }
-    #tool-menu .color-current:hover { border-color: #94a3b8; }
-    #tool-menu .color-expanded { display: none; flex-direction: column; align-items: center; gap: 6px; }
+    #tool-menu .color-current { width: 32px; height: 32px; border: 2px solid #000; border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.3); }
+    #tool-menu .color-current:hover { border-color: #334155; }
+    #tool-menu .color-expanded { display: none; flex-direction: column; align-items: center; gap: 6px; border: 1px solid #000; border-radius: 8px; padding: 6px; margin-top: 4px; }
     #tool-menu .color-section.expanded .color-expanded { display: flex; }
     #tool-menu .color-swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 48px; }
     #tool-menu .color-swatch { width: 18px; height: 18px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; flex-shrink: 0; }
@@ -146,8 +146,8 @@
     <nav id="tool-menu" aria-label="Tools">
       <div class="palette-group">
         <button type="button" id="tool-draw" class="tool-btn active" title="Draw"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19l7-7 3 3-7 7-3-3z"/><path d="M18 13l-1.5-7.5L2 2l3.5 14.5L13 18l5-5z"/><path d="M2 2l7.586 7.586"/></svg></button>
-        <button type="button" id="tool-erase" class="tool-btn" title="Erase"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 20H7L3 16c-1-1 1.5-4 2-4h5l2-2h6a1 1 0 0 1 1 1v3a1 1 0 0 1-1 1z"/></svg></button>
-        <button type="button" id="tool-fill" class="tool-btn" title="Fill color"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 11V8a2 2 0 0 0-2-2h-3a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h3a2 2 0 0 0 2-2z"/><path d="M5 11V8a2 2 0 0 1 2-2h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/></svg></button>
+        <button type="button" id="tool-erase" class="tool-btn" title="Erase"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 16l6-8 12 0-6 8H3z"/><path d="M9 8l6 8"/></svg></button>
+        <button type="button" id="tool-fill" class="tool-btn" title="Fill color"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11v8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2v-8"/><path d="M5 11V7a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v4"/><path d="M12 2v5"/><path d="M9 6l3 3 3-3"/></svg></button>
       </div>
       <hr class="palette-sep" aria-hidden="true" />
       <div class="palette-group">
