@@ -1472,7 +1472,10 @@ function setTool(newTool) {
   if (tool !== 'arrow') connectorPendingFrom = null;
   connectorPreviewTo = null;
   const boardInner = document.getElementById('board-inner');
-  if (boardInner) boardInner.classList.toggle('erase-active', tool === 'erase');
+  if (boardInner) {
+    boardInner.classList.toggle('erase-active', tool === 'erase');
+    boardInner.classList.toggle('hand-tool', tool === 'move');
+  }
   updateCursor();
 }
 
@@ -1621,8 +1624,16 @@ canvas.addEventListener('pointerdown', (e) => {
             e.target.setPointerCapture(e.pointerId);
           }
         } else {
-          if (!e.shiftKey) selectionRectStart = { x: pt.x, y: pt.y };
+          // Empty space: pan the board (hand tool drag-to-pan)
+          e.preventDefault();
+          panning = true;
+          panStartX = panX;
+          panStartY = panY;
+          const c = toCanvasCoords(e);
+          pointerStartCanvasX = c.x;
+          pointerStartCanvasY = c.y;
           e.target.setPointerCapture(e.pointerId);
+          updateCursor();
         }
       }
     }

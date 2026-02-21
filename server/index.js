@@ -800,9 +800,19 @@ const { runAiCommand } = require('./ai-agent.js');
 
 app.post('/api/ai/command', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
-  const session = cookies.session ? await db.getSession(cookies.session) : null;
+  const sessionId = cookies.session;
+  if (!sessionId) {
+    return res.status(401).json({ error: 'Not authenticated', hint: 'No session cookie. Sign in again.' });
+  }
+  let session;
+  try {
+    session = await db.getSession(sessionId);
+  } catch (err) {
+    console.error('Session lookup error:', err);
+    return res.status(500).json({ error: 'Not authenticated', hint: 'Session lookup failed.' });
+  }
   if (!session) {
-    return res.status(401).json({ error: 'Not authenticated' });
+    return res.status(401).json({ error: 'Not authenticated', hint: 'Session expired or invalid. Sign in again.' });
   }
   const { command } = req.body || {};
   if (typeof command !== 'string' || !command.trim()) {
