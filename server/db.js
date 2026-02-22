@@ -13,18 +13,10 @@ async function init() {
     console.warn('DATABASE_URL not set; using in-memory sessions and no board persistence.');
     return;
   }
-  try {
-    pool = new Pool({
-      connectionString: DATABASE_URL,
-      ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
-    });
-    await pool.query('SELECT 1');
-  } catch (err) {
-    console.error('PostgreSQL connection failed:', err.message || err);
-    console.warn('Falling back to in-memory sessions and no board persistence.');
-    pool = null;
-    return;
-  }
+  pool = new Pool({
+    connectionString: DATABASE_URL,
+    ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+  });
 
   try {
   await pool.query(`
