@@ -56,7 +56,7 @@ let currentStrokeId = null;
 let cursorThrottle = 0;
 const CURSOR_THROTTLE_MS = 50;
 let myClientId = null;
-let tool = 'move'; // 'draw' | 'erase' | 'sticky' | 'move' | 'fill' | 'rect' | 'circle' | 'arrow'
+let tool = 'move'; // 'draw' | 'erase' | 'sticky' | 'move' | 'marquee' | 'fill' | 'rect' | 'circle' | 'arrow'
 let pendingShape = null; // { type: 'rect'|'circle', p1: {x,y}, p2: {x,y} }
 let pendingFrame = null; // { p1: {x,y}, p2: {x,y} }
 let connectorPendingFrom = null; // { type:'sticky', id } | { type:'point', x, y } when waiting for second click
@@ -902,9 +902,13 @@ function draw() {
     }
   }
 
-  if (selectionRectCurrent) {
-    const a = worldToCanvas(selectionRectCurrent.minX, selectionRectCurrent.minY);
-    const b = worldToCanvas(selectionRectCurrent.maxX, selectionRectCurrent.maxY);
+  if (selectionRectStart && selectionRectCurrent) {
+    const minX = Math.min(selectionRectStart.x, selectionRectCurrent.x);
+    const maxX = Math.max(selectionRectStart.x, selectionRectCurrent.x);
+    const minY = Math.min(selectionRectStart.y, selectionRectCurrent.y);
+    const maxY = Math.max(selectionRectStart.y, selectionRectCurrent.y);
+    const a = worldToCanvas(minX, minY);
+    const b = worldToCanvas(maxX, maxY);
     const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
     const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
     ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
@@ -1791,6 +1795,7 @@ function setTool(newTool) {
   document.getElementById('tool-erase').classList.toggle('active', tool === 'erase');
   document.getElementById('tool-sticky').classList.toggle('active', tool === 'sticky');
   document.getElementById('tool-move').classList.toggle('active', tool === 'move');
+  document.getElementById('tool-marquee').classList.toggle('active', tool === 'marquee');
   document.getElementById('tool-frame').classList.toggle('active', tool === 'frame');
   document.getElementById('tool-fill').classList.toggle('active', tool === 'fill');
   document.getElementById('tool-rect').classList.toggle('active', tool === 'rect');
@@ -1811,6 +1816,7 @@ document.getElementById('tool-draw').addEventListener('click', () => setTool('dr
 document.getElementById('tool-erase').addEventListener('click', () => setTool('erase'));
 document.getElementById('tool-sticky').addEventListener('click', () => setTool('sticky'));
 document.getElementById('tool-move').addEventListener('click', () => setTool('move'));
+document.getElementById('tool-marquee').addEventListener('click', () => setTool('marquee'));
 document.getElementById('tool-frame').addEventListener('click', () => setTool('frame'));
   document.getElementById('tool-fill').addEventListener('click', () => setTool('fill'));
 document.getElementById('tool-rect').addEventListener('click', () => setTool('rect'));
@@ -1965,6 +1971,13 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (!ws || ws.readyState !== 1) return;
+  if (tool === 'marquee') {
+    selectionRectStart = { x: pt.x, y: pt.y };
+    selectionRectCurrent = { x: pt.x, y: pt.y };
+    e.target.setPointerCapture(e.pointerId);
+    draw();
+    return;
+  }
   if (tool === 'move') {
     const resizeHandleStroke = getShapeResizeHandleAtPoint(pt.x, pt.y);
     if (resizeHandleStroke) {
@@ -2133,7 +2146,7 @@ canvas.addEventListener('pointermove', (e) => {
       clampStrokeToVisible(stroke);
       draw();
     }
-  } else if (tool === 'move' && selectionRectStart) {
+  } else if ((tool === 'move' || tool === 'marquee') && selectionRectStart) {
     selectionRectCurrent = { x: pt.x, y: pt.y };
     draw();
   } else if (tool === 'move' && movingFrameId) {
@@ -2209,7 +2222,7 @@ canvas.addEventListener('pointerup', (e) => {
     draw();
     return;
   }
-  if (tool === 'move' && selectionRectStart != null) {
+  if ((tool === 'move' || tool === 'marquee') && selectionRectStart != null) {
     try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
     if (selectionRectCurrent) {
       const minX = Math.min(selectionRectStart.x, selectionRectCurrent.x);

@@ -174,8 +174,6 @@
   <div id="toolbar">
     <span id="status">Connecting…</span>
     <span id="app-title">Whiteboard</span>
-    <button type="button" id="rotate-left" title="Rotate selection left (15°)" style="background: none; border: none; color: #94a3b8; font-size: 18px; cursor: pointer; padding: 4px 8px; line-height: 1;">↶</button>
-    <button type="button" id="rotate-right" title="Rotate selection right (15°)" style="background: none; border: none; color: #94a3b8; font-size: 18px; cursor: pointer; padding: 4px 8px; line-height: 1;">↷</button>
     <button type="button" id="switch-board-btn" class="hidden" style="margin-left: auto; background: none; border: none; color: #94a3b8; font-size: 13px; cursor: pointer;">Switch board</button>
   </div>
   <div id="main">
@@ -183,6 +181,7 @@
     <nav id="tool-menu" aria-label="Tools">
       <div class="palette-group">
         <button type="button" id="tool-move" class="tool-btn active" title="Hand: drag objects to move, drag empty space to pan"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-4 0v5"/><path d="M14 10V4a2 2 0 0 0-4 0v6"/><path d="M10 10V6a2 2 0 0 0-4 0v8"/><path d="M6 12h12a2 2 0 0 1 2 2v2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2a2 2 0 0 1 2-2z"/></svg></button>
+        <button type="button" id="tool-marquee" class="tool-btn" title="Selection box: drag to select multiple elements"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="3 2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
       </div>
       <hr class="palette-sep" aria-hidden="true" />
       <div class="palette-group">
@@ -201,6 +200,11 @@
         <button type="button" id="tool-rect" class="tool-btn" title="Rectangle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1"/></svg></button>
         <button type="button" id="tool-circle" class="tool-btn" title="Circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></button>
         <button type="button" id="tool-arrow" class="tool-btn" title="Arrow / Connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg></button>
+      </div>
+      <hr class="palette-sep" aria-hidden="true" />
+      <div class="palette-group">
+        <button type="button" id="rotate-left" class="tool-btn" title="Rotate selection left (15°)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+        <button type="button" id="rotate-right" class="tool-btn" title="Rotate selection right (15°)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg></button>
       </div>
     </nav>
     <div id="color-section" class="color-panel" aria-label="Color">
