@@ -6,6 +6,7 @@ const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 let pool = null;
+let boardStateIdColumn = 'whiteboard_id';
 const memorySessions = new Map();
 
 async function init() {
@@ -64,10 +65,11 @@ async function init() {
       next_seq INTEGER NOT NULL DEFAULT 0
     )
   `);
-  try {
-    await pool.query('ALTER TABLE board_state RENAME COLUMN board_id TO whiteboard_id');
-  } catch (e) {
-    if (e.code !== '42701' && e.code !== '42703') throw e;
+  const colCheck = await pool.query(
+    `SELECT column_name FROM information_schema.columns WHERE table_name = 'board_state' AND column_name IN ('whiteboard_id', 'board_id')`
+  );
+  if (colCheck.rows.length) {
+    boardStateIdColumn = colCheck.rows[0].column_name;
   }
 
   try {
@@ -189,7 +191,7 @@ async function loadBoardState(whiteboardId) {
   if (!pool || !whiteboardId) return null;
   const r = await pool.query(
     `SELECT strokes, stickies, text_elements AS "textElements", connectors, frames, next_seq AS "nextSeq"
-     FROM board_state WHERE whiteboard_id = $1`,
+     FROM board_state WHERE ${boardStateIdColumn} = $1`,
     [whiteboardId]
   );
   if (!r.rows[0]) return null;
@@ -208,9 +210,9 @@ async function saveBoardState(whiteboardId, state) {
   if (!pool || !whiteboardId) return;
   const { strokes, stickies, textElements, connectors, frames, nextSeq } = state;
   await pool.query(
-    `INSERT INTO board_state (whiteboard_id, strokes, stickies, text_elements, connectors, frames, next_seq)
+    `INSERT INTO board_state (${boardStateIdColumn}, strokes, stickies, text_elements, connectors, frames, next_seq)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (whiteboard_id) DO UPDATE SET
+     ON CONFLICT (${boardStateIdColumn}) DO UPDATE SET
        strokes = $2, stickies = $3, text_elements = $4, connectors = $5, frames = $6, next_seq = $7`,
     [
       whiteboardId,
