@@ -296,9 +296,13 @@ const cursorsByBoard = new Map();
 /** Board IDs that have in-memory changes not yet written to Postgres. Flushed periodically. */
 const dirtyBoards = new Set();
 
+/** Return in-memory state for this board. Never returns shared defaultState for a real boardId — ensures a dedicated state exists per board so all boards use server memory. */
 function getBoardState(boardId) {
-  if (boardId && boardStates.has(boardId)) return boardStates.get(boardId);
-  return defaultState;
+  if (!boardId) return defaultState;
+  if (boardStates.has(boardId)) return boardStates.get(boardId);
+  const state = emptyBoardState();
+  boardStates.set(boardId, state);
+  return state;
 }
 
 function applyLoadedState(s, loaded) {
