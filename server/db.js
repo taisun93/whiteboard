@@ -75,22 +75,35 @@ async function init() {
     if (e.code !== '42701' && e.code !== '42703') throw e;
   }
   const colRes = await pool.query(
-    `SELECT table_schema, column_name FROM information_schema.columns
-     WHERE table_name = 'board_state'
-     AND column_name IN ('whiteboard_id', 'board_id', 'id')
-     ORDER BY table_schema = 'public' DESC, CASE column_name WHEN 'whiteboard_id' THEN 1 WHEN 'board_id' THEN 2 WHEN 'id' THEN 3 ELSE 4 END
+    `SELECT column_name FROM information_schema.columns
+     WHERE table_schema = COALESCE(current_schema(), 'public') AND table_name = 'board_state'
+     AND data_type = 'uuid'
+     AND column_name IN ('whiteboard_id', 'board_id')
+     ORDER BY CASE column_name WHEN 'whiteboard_id' THEN 1 WHEN 'board_id' THEN 2 ELSE 3 END
      LIMIT 1`
   );
   if (colRes.rows.length) {
     boardStateIdColumn = colRes.rows[0].column_name;
   } else {
-    const anyCol = await pool.query(
+    const uuidCol = await pool.query(
       `SELECT column_name FROM information_schema.columns
-       WHERE table_name = 'board_state'
-       ORDER BY (table_schema = 'public') DESC, ordinal_position
-       LIMIT 1`
+       WHERE table_schema = COALESCE(current_schema(), 'public') AND table_name = 'board_state'
+       AND data_type = 'uuid'
+       ORDER BY ordinal_position LIMIT 1`
     );
-    boardStateIdColumn = anyCol.rows.length ? anyCol.rows[0].column_name : 'whiteboard_id';
+    if (uuidCol.rows.length) {
+      boardStateIdColumn = uuidCol.rows[0].column_name;
+    } else {
+      try {
+        await pool.query(
+          `ALTER TABLE board_state ADD COLUMN IF NOT EXISTS whiteboard_id UUID UNIQUE REFERENCES whiteboards(id) ON DELETE CASCADE`
+        );
+        boardStateIdColumn = 'whiteboard_id';
+      } catch (e) {
+        if (e.code !== '42701') throw e;
+        boardStateIdColumn = 'whiteboard_id';
+      }
+    }
   }
   if (!boardStateIdColumn) boardStateIdColumn = 'whiteboard_id';
   console.log('PostgreSQL board_state id column:', boardStateIdColumn);
