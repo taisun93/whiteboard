@@ -93,17 +93,27 @@ function parseHex(str) {
   return null;
 }
 
-function connect() {
+let currentBoardId = null;
+let multiBoardMode = false;
+
+function connect(boardId) {
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${location.host}`);
+  const url = boardId ? `${protocol}//${location.host}?board_id=${encodeURIComponent(boardId)}` : `${protocol}//${location.host}`;
+  ws = new WebSocket(url);
   ws.onopen = () => {
     statusEl.textContent = 'Connected';
     statusEl.classList.add('connected');
   };
-  ws.onclose = () => {
+  ws.onclose = (ev) => {
     statusEl.textContent = 'Disconnected';
     statusEl.classList.remove('connected');
-    setTimeout(connect, 2000);
+    if (ev.code === 4003 && currentBoardId) {
+      try { sessionStorage.removeItem('whiteboardId'); } catch (_) {}
+      currentBoardId = null;
+      if (multiBoardMode && typeof showBoardPicker === 'function') showBoardPicker();
+    } else {
+      setTimeout(() => connect(currentBoardId), 2000);
+    }
   };
   ws.onmessage = (e) => {
     let msg;
@@ -2315,11 +2325,13 @@ window.addEventListener('resize', () => {
     window.dispatchEvent(new CustomEvent('ai-command-run', { detail: { text } }));
     if (typeof window.onAiCommandRun === 'function') window.onAiCommandRun(text);
     try {
+      const body = { command: text };
+      if (currentBoardId) body.boardId = currentBoardId;
       const res = await fetch('/api/ai/command', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'include',
-        body: JSON.stringify({ command: text })
+        body: JSON.stringify(body)
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -2351,6 +2363,109 @@ window.addEventListener('resize', () => {
   });
 })();
 
-connect();
-draw();
-applyToolUI();
+function showBoardPicker(list) {
+  const picker = document.getElementById('board-picker');
+  const listEl = document.getElementById('board-picker-list');
+  const newName = document.getElementById('new-board-name');
+  const newBtn = document.getElementById('new-board-btn');
+  if (!picker || !listEl) return;
+  listEl.innerHTML = '';
+  (list || []).forEach((b) => {
+    const li = document.createElement('li');
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.textContent = b.name || 'Untitled';
+    btn.addEventListener('click', () => {
+      currentBoardId = b.id;
+      try { sessionStorage.setItem('whiteboardId', b.id); } catch (_) {}
+      picker.classList.add('hidden');
+      const sw = document.getElementById('switch-board-btn');
+      if (sw) sw.classList.remove('hidden');
+      connect(b.id);
+      draw();
+      applyToolUI();
+      renderStickies();
+      renderTextElements();
+    });
+    li.appendChild(btn);
+    listEl.appendChild(li);
+  });
+  function createAndOpen() {
+    const name = (newName && newName.value) ? newName.value.trim() || 'Untitled' : 'Untitled';
+    fetch('/api/whiteboards', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ name })
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (data.id) {
+          currentBoardId = data.id;
+          try { sessionStorage.setItem('whiteboardId', data.id); } catch (_) {}
+          picker.classList.add('hidden');
+          const sw = document.getElementById('switch-board-btn');
+          if (sw) sw.classList.remove('hidden');
+          connect(data.id);
+          draw();
+          applyToolUI();
+          renderStickies();
+          renderTextElements();
+        }
+      })
+      .catch(() => {});
+  }
+  if (newBtn) newBtn.onclick = createAndOpen;
+  const sw = document.getElementById('switch-board-btn');
+  if (sw) sw.classList.add('hidden');
+  picker.classList.remove('hidden');
+}
+
+(function initBoardAndConnect() {
+  fetch('/api/me', { credentials: 'include' })
+    .then((r) => r.json())
+    .then((data) => {
+      multiBoardMode = !!data.multiBoard;
+      if (!multiBoardMode) {
+        connect();
+        draw();
+        applyToolUI();
+        return;
+      }
+      return fetch('/api/whiteboards', { credentials: 'include' })
+        .then((res) => res.json())
+        .then((wb) => {
+          const list = wb.whiteboards || [];
+          const saved = (function () { try { return sessionStorage.getItem('whiteboardId'); } catch (_) { return null; } })();
+          if (saved && list.some((b) => b.id === saved)) {
+            currentBoardId = saved;
+            connect(saved);
+            draw();
+            applyToolUI();
+            const sw = document.getElementById('switch-board-btn');
+            if (sw) sw.classList.remove('hidden');
+            return;
+          }
+          showBoardPicker(list);
+        });
+    })
+    .catch(() => {
+      connect();
+      draw();
+      applyToolUI();
+    });
+
+  const switchBoardBtn = document.getElementById('switch-board-btn');
+  if (switchBoardBtn) {
+    switchBoardBtn.addEventListener('click', () => {
+      if (!multiBoardMode) return;
+      if (ws) { ws.close(); ws = null; }
+      currentBoardId = null;
+      try { sessionStorage.removeItem('whiteboardId'); } catch (_) {}
+      fetch('/api/whiteboards', { credentials: 'include' })
+        .then((r) => r.json())
+        .then((wb) => showBoardPicker(wb.whiteboards || []))
+        .catch(() => showBoardPicker([]));
+    });
+  }
+})();

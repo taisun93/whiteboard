@@ -122,6 +122,23 @@
     .ai-command-status { font-size: 12px; color: #94a3b8; margin-bottom: 8px; min-height: 1.2em; }
     .ai-command-status.error { color: #f87171; }
     .ai-command-status.success { color: #4ade80; }
+    #board-picker {
+      position: fixed; inset: 0; z-index: 200;
+      background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px;
+    }
+    #board-picker.hidden { display: none; }
+    #board-picker h2 { margin: 0 0 16px 0; font-size: 18px; color: #e2e8f0; }
+    #board-picker ul { list-style: none; margin: 0 0 20px 0; padding: 0; width: 100%; max-width: 360px; }
+    #board-picker li { margin-bottom: 8px; }
+    #board-picker li button {
+      width: 100%; padding: 12px 16px; text-align: left; background: #16213e; border: 1px solid #1e293b;
+      border-radius: 8px; color: #e2e8f0; font-size: 14px; cursor: pointer;
+    }
+    #board-picker li button:hover { background: #1e293b; border-color: #334155; }
+    #board-picker .new-board { display: flex; gap: 8px; max-width: 360px; width: 100%; margin-top: 8px; }
+    #board-picker .new-board input { flex: 1; padding: 10px 12px; border: 1px solid #1e293b; border-radius: 6px; background: #0f0f1a; color: #eee; font-size: 14px; }
+    #board-picker .new-board button { padding: 10px 18px; border: none; border-radius: 6px; background: #3b82f6; color: #fff; font-size: 14px; cursor: pointer; }
+    #board-picker .new-board button:hover { background: #2563eb; }
   </style>
 </head>
 <body>
@@ -137,9 +154,18 @@
     </div>
   </div>
   <div id="app">
+  <div id="board-picker" class="hidden" aria-label="Choose a whiteboard">
+    <h2>Choose a whiteboard</h2>
+    <ul id="board-picker-list"></ul>
+    <div class="new-board">
+      <input type="text" id="new-board-name" placeholder="New whiteboard name" value="Untitled" />
+      <button type="button" id="new-board-btn">Create new</button>
+    </div>
+  </div>
   <div id="toolbar">
     <span id="status">Connecting…</span>
     <span id="app-title">Whiteboard</span>
+    <button type="button" id="switch-board-btn" class="hidden" style="margin-left: auto; background: none; border: none; color: #94a3b8; font-size: 13px; cursor: pointer;">Switch board</button>
   </div>
   <div id="main">
     <div id="board-wrap">

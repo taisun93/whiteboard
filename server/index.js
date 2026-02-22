@@ -176,7 +176,8 @@ app.get('/api/me', async (req, res) => {
       username: session.name,
       email: session.email,
       googleId: session.googleId
-    }
+    },
+    multiBoard: db.hasDatabase()
   });
 });
 
@@ -187,16 +188,42 @@ app.post('/api/logout', async (req, res) => {
   res.json({ ok: true });
 });
 
+app.get('/api/whiteboards', async (req, res) => {
+  const cookies = parseCookie(req.headers.cookie);
+  const session = cookies.session ? await db.getSession(cookies.session) : null;
+  if (!session || !session.userId) {
+    return res.status(401).json({ error: 'Not logged in' });
+  }
+  try {
+    const list = await db.listWhiteboardsForUser(session.userId);
+    res.json({ whiteboards: list });
+  } catch (err) {
+    console.error('list whiteboards:', err);
+    res.status(500).json({ error: 'Failed to list whiteboards' });
+  }
+});
+
+app.post('/api/whiteboards', async (req, res) => {
+  const cookies = parseCookie(req.headers.cookie);
+  const session = cookies.session ? await db.getSession(cookies.session) : null;
+  if (!session || !session.userId) {
+    return res.status(401).json({ error: 'Not logged in' });
+  }
+  const name = (req.body && req.body.name) ? String(req.body.name).trim() || 'Untitled' : 'Untitled';
+  try {
+    const board = await db.createWhiteboard(session.userId, name);
+    if (!board) return res.status(500).json({ error: 'Failed to create whiteboard' });
+    res.status(201).json(board);
+  } catch (err) {
+    console.error('create whiteboard:', err);
+    res.status(500).json({ error: 'Failed to create whiteboard' });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 
-// Server-authoritative: strokes, stickies, text, connectors, frames
-let nextSeq = 0;
-const strokes = [];
-const stickies = []; // { id, x, y, width, height, text, color, rotation? }
-const textElements = []; // { id, x, y, text, color, width?, height?, rotation? }
-const connectors = []; // { id, from, to, color }
-const frames = []; // { id, x, y, width, height, title? }
+// Server-authoritative: per-board state when DB; single default state when no DB
 const STICKY_DEFAULT_W = 200;
 const STICKY_DEFAULT_H = 150;
 const TEXT_DEFAULT_W = 140;
@@ -204,26 +231,79 @@ const TEXT_DEFAULT_H = 28;
 const FRAME_DEFAULT_W = 300;
 const FRAME_DEFAULT_H = 200;
 
+function emptyBoardState() {
+  return {
+    strokes: [],
+    stickies: [],
+    textElements: [],
+    connectors: [],
+    frames: [],
+    nextSeq: 0
+  };
+}
+
+const defaultState = emptyBoardState();
+const boardStates = new Map();
+const cursorsByBoard = new Map();
+
+function getBoardState(boardId) {
+  if (boardId && boardStates.has(boardId)) return boardStates.get(boardId);
+  return defaultState;
+}
+
+async function ensureBoardState(boardId) {
+  if (!boardId) return defaultState;
+  if (boardStates.has(boardId)) return boardStates.get(boardId);
+  const loaded = await db.loadBoardState(boardId);
+  const state = loaded || emptyBoardState();
+  boardStates.set(boardId, state);
+  return state;
+}
+
+function broadcastToBoard(boardId, payload) {
+  const s = typeof payload === 'string' ? payload : JSON.stringify(payload);
+  const onBoard = (c) => (!db.hasDatabase() || c.boardId === boardId) && c.readyState === 1;
+  wss.clients.forEach((c) => { if (onBoard(c)) c.send(s); });
+}
+
+function broadcastUsers(boardId) {
+  const onBoard = (c) => (!db.hasDatabase() || c.boardId === boardId) && c.readyState === 1;
+  const userList = Array.from(wss.clients)
+    .filter(onBoard)
+    .map((c) => ({ clientId: c.clientId, username: c.username || 'anonymous' }))
+    .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
+  const payload = JSON.stringify({ type: 'USERS', users: userList });
+  wss.clients.forEach((c) => { if (onBoard(c)) c.send(payload); });
+}
+
+function persistBoard(boardId) {
+  if (!boardId || !db.hasDatabase()) return;
+  const state = getBoardState(boardId);
+  db.saveBoardState(boardId, state).catch((err) => console.error('persist board:', err));
+}
+
 /** World bounds of all board content for fit-view. Returns { minX, minY, maxX, maxY } or null if empty. */
-function getBoardWorldBounds() {
+function getBoardWorldBounds(state) {
+  if (!state) return null;
+  const { stickies: st, textElements: te, frames: fr, strokes: sr } = state;
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const expand = (x, y) => {
     if (Number.isFinite(x)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
     if (Number.isFinite(y)) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
   };
-  stickies.forEach((s) => {
+  (st || []).forEach((s) => {
     expand(s.x, s.y);
     expand(s.x + (s.width || STICKY_DEFAULT_W), s.y + (s.height || STICKY_DEFAULT_H));
   });
-  textElements.forEach((t) => {
+  (te || []).forEach((t) => {
     expand(t.x, t.y);
     expand(t.x + (t.width || TEXT_DEFAULT_W), t.y + (t.height || TEXT_DEFAULT_H));
   });
-  frames.forEach((f) => {
+  (fr || []).forEach((f) => {
     expand(f.x, f.y);
     expand(f.x + (f.width || FRAME_DEFAULT_W), f.y + (f.height || FRAME_DEFAULT_H));
   });
-  strokes.forEach((s) => {
+  (sr || []).forEach((s) => {
     if (s.points && s.points.length) s.points.forEach((p) => expand(p.x, p.y));
   });
   if (minX === Infinity || minY === Infinity) return null;
@@ -238,35 +318,59 @@ function getBoardWorldBounds() {
   };
 }
 
-function persistBoard() {
-  db.saveBoardState({ strokes, stickies, textElements, connectors, frames, nextSeq }).catch((err) =>
-    console.error('persist board:', err)
-  );
-}
-
 const wss = new WebSocketServer({ server });
 
-// Cursor presence: clientId -> { x, y } (canvas coords), for new joiners
-const cursors = new Map();
 let nextClientId = 0;
+
+function parseBoardIdFromUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const i = url.indexOf('?');
+  if (i === -1) return null;
+  const params = new URLSearchParams(url.slice(i));
+  return params.get('board_id') || null;
+}
 
 wss.on('connection', async (ws, req) => {
   const cookies = parseCookie(req.headers.cookie);
   const session = cookies.session ? await db.getSession(cookies.session) : null;
   ws.username = session ? session.name : 'anonymous';
 
+  let boardId = parseBoardIdFromUrl(req.url);
+  if (db.hasDatabase()) {
+    if (!boardId) {
+      ws.close(4000, 'board_id required');
+      return;
+    }
+    if (!session || !session.userId) {
+      ws.close(4001, 'auth required');
+      return;
+    }
+    const allowed = await db.isUserInWhiteboard(session.userId, boardId);
+    if (!allowed) {
+      ws.close(4003, 'not in whiteboard');
+      return;
+    }
+  } else {
+    boardId = 'default';
+  }
+  ws.boardId = boardId;
+
+  await ensureBoardState(boardId);
+
   const clientId = `u${nextClientId++}`;
   ws.clientId = clientId;
 
+  if (!cursorsByBoard.has(boardId)) cursorsByBoard.set(boardId, new Map());
+
   ws.send(JSON.stringify({ type: 'ME', clientId, username: ws.username }));
-  // Send full state to new client
-  ws.send(JSON.stringify({ type: 'STATE', strokes, stickies, textElements, connectors, frames }));
-  ws.send(JSON.stringify({ type: 'SEQ', nextSeq }));
-  // Send current cursors so new user sees everyone on screen
+  const state = getBoardState(boardId);
+  ws.send(JSON.stringify({ type: 'STATE', strokes: state.strokes, stickies: state.stickies, textElements: state.textElements, connectors: state.connectors, frames: state.frames }));
+  ws.send(JSON.stringify({ type: 'SEQ', nextSeq: state.nextSeq }));
+  const cursors = cursorsByBoard.get(boardId);
   const cursorList = Array.from(cursors.entries()).map(([id, pos]) => ({ clientId: id, ...pos }));
   ws.send(JSON.stringify({ type: 'CURSORS', cursors: cursorList }));
 
-  broadcastUsers();
+  broadcastUsers(boardId);
 
   ws.on('message', (raw) => {
     let msg;
@@ -275,63 +379,50 @@ wss.on('connection', async (ws, req) => {
     } catch {
       return;
     }
+    const state = getBoardState(ws.boardId);
+    const cursors = cursorsByBoard.get(ws.boardId) || new Map();
+
     if (msg.type === 'ADD_STROKE') {
       if (!Array.isArray(msg.points) || !msg.strokeId) return;
-      const seq = nextSeq++;
+      const seq = state.nextSeq++;
       const color = typeof msg.color === 'string' ? msg.color : '#e2e8f0';
       const shape = msg.shape === 'rect' || msg.shape === 'circle' ? msg.shape : undefined;
       const stroke = { seq, strokeId: msg.strokeId, points: msg.points, color };
       if (shape) stroke.shape = shape;
-      strokes.push(stroke);
-      persistBoard();
-      const payload = JSON.stringify({ type: 'STROKE_ADDED', stroke });
-      wss.clients.forEach((c) => {
-        if (c.readyState === 1) c.send(payload);
-      });
+      state.strokes.push(stroke);
+      persistBoard(ws.boardId);
+      broadcastToBoard(ws.boardId, { type: 'STROKE_ADDED', stroke });
       return;
     }
     if (msg.type === 'DELETE_STROKES' && Array.isArray(msg.strokeIds)) {
       const ids = new Set(msg.strokeIds);
       const removed = [];
-      for (let i = strokes.length - 1; i >= 0; i--) {
-        if (ids.has(strokes[i].strokeId)) {
-          removed.push(strokes[i].strokeId);
-          strokes.splice(i, 1);
+      for (let i = state.strokes.length - 1; i >= 0; i--) {
+        if (ids.has(state.strokes[i].strokeId)) {
+          removed.push(state.strokes[i].strokeId);
+          state.strokes.splice(i, 1);
         }
       }
       if (removed.length > 0) {
         const removedSet = new Set(removed);
-        const connToRemoveIds = connectors.filter((c) => (c.from.type === 'stroke' && removedSet.has(c.from.strokeId)) || (c.to.type === 'stroke' && removedSet.has(c.to.strokeId))).map((c) => c.id);
-        for (let k = connectors.length - 1; k >= 0; k--) {
-          if (connToRemoveIds.includes(connectors[k].id)) connectors.splice(k, 1);
+        const connToRemoveIds = state.connectors.filter((c) => (c.from.type === 'stroke' && removedSet.has(c.from.strokeId)) || (c.to.type === 'stroke' && removedSet.has(c.to.strokeId))).map((c) => c.id);
+        for (let k = state.connectors.length - 1; k >= 0; k--) {
+          if (connToRemoveIds.includes(state.connectors[k].id)) state.connectors.splice(k, 1);
         }
-        connToRemoveIds.forEach((id) => {
-          const payload = JSON.stringify({ type: 'CONNECTOR_REMOVED', id });
-          wss.clients.forEach((client) => { if (client.readyState === 1) client.send(payload); });
-        });
-        persistBoard();
-        const payload = JSON.stringify({ type: 'STROKES_REMOVED', strokeIds: removed });
-        const clients = Array.from(wss.clients);
-        clients.forEach((c) => {
-          if (c.readyState === 1) c.send(payload);
-        });
+        connToRemoveIds.forEach((id) => broadcastToBoard(ws.boardId, { type: 'CONNECTOR_REMOVED', id }));
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STROKES_REMOVED', strokeIds: removed });
       }
       return;
     }
     if (msg.type === 'CURSOR_MOVE' && typeof msg.x === 'number' && typeof msg.y === 'number') {
       cursors.set(clientId, { x: msg.x, y: msg.y });
-      const payload = JSON.stringify({ type: 'CURSOR_MOVE', clientId, x: msg.x, y: msg.y });
-      wss.clients.forEach((c) => {
-        if (c.readyState === 1) c.send(payload);
-      });
+      broadcastToBoard(ws.boardId, { type: 'CURSOR_MOVE', clientId, x: msg.x, y: msg.y });
       return;
     }
     if (msg.type === 'CURSOR_LEFT') {
       cursors.delete(clientId);
-      const payload = JSON.stringify({ type: 'CURSOR_LEFT', clientId });
-      wss.clients.forEach((c) => {
-        if (c.readyState === 1 && c !== ws) c.send(payload);
-      });
+      broadcastToBoard(ws.boardId, { type: 'CURSOR_LEFT', clientId });
       return;
     }
     if (msg.type === 'ADD_STICKY' && msg.id && typeof msg.x === 'number' && typeof msg.y === 'number') {
@@ -344,16 +435,13 @@ wss.on('connection', async (ws, req) => {
         text: typeof msg.text === 'string' ? msg.text : '',
         color: typeof msg.color === 'string' ? msg.color : '#fef9c3'
       };
-      stickies.push(sticky);
-      persistBoard();
-      const payload = JSON.stringify({ type: 'STICKY_ADDED', sticky });
-      wss.clients.forEach((c) => {
-        if (c.readyState === 1) c.send(payload);
-      });
+      state.stickies.push(sticky);
+      persistBoard(ws.boardId);
+      broadcastToBoard(ws.boardId, { type: 'STICKY_ADDED', sticky });
       return;
     }
     if (msg.type === 'UPDATE_STICKY' && msg.id) {
-      const s = stickies.find((s) => s.id === msg.id);
+      const s = state.stickies.find((s) => s.id === msg.id);
       if (s) {
         const updates = {};
         if (typeof msg.text === 'string') {
@@ -377,32 +465,23 @@ wss.on('connection', async (ws, req) => {
           updates.rotation = msg.rotation;
         }
         if (Object.keys(updates).length > 0) {
-          persistBoard();
-          const payload = JSON.stringify({ type: 'STICKY_UPDATED', id: msg.id, ...updates });
-          wss.clients.forEach((c) => {
-            if (c.readyState === 1) c.send(payload);
-          });
+          persistBoard(ws.boardId);
+          broadcastToBoard(ws.boardId, { type: 'STICKY_UPDATED', id: msg.id, ...updates });
         }
       }
       return;
     }
     if (msg.type === 'DELETE_STICKY' && msg.id) {
-      const i = stickies.findIndex((s) => s.id === msg.id);
+      const i = state.stickies.findIndex((s) => s.id === msg.id);
       if (i >= 0) {
-        stickies.splice(i, 1);
-        const toRemoveIds = connectors.filter((c) => (c.from.type === 'sticky' && c.from.id === msg.id) || (c.to.type === 'sticky' && c.to.id === msg.id)).map((c) => c.id);
-        for (let k = connectors.length - 1; k >= 0; k--) {
-          if (toRemoveIds.includes(connectors[k].id)) connectors.splice(k, 1);
+        state.stickies.splice(i, 1);
+        const toRemoveIds = state.connectors.filter((c) => (c.from.type === 'sticky' && c.from.id === msg.id) || (c.to.type === 'sticky' && c.to.id === msg.id)).map((c) => c.id);
+        for (let k = state.connectors.length - 1; k >= 0; k--) {
+          if (toRemoveIds.includes(state.connectors[k].id)) state.connectors.splice(k, 1);
         }
-        toRemoveIds.forEach((id) => {
-          const payload = JSON.stringify({ type: 'CONNECTOR_REMOVED', id });
-          wss.clients.forEach((client) => { if (client.readyState === 1) client.send(payload); });
-        });
-        persistBoard();
-        const payload = JSON.stringify({ type: 'STICKY_REMOVED', id: msg.id });
-        wss.clients.forEach((c) => {
-          if (c.readyState === 1) c.send(payload);
-        });
+        toRemoveIds.forEach((id) => broadcastToBoard(ws.boardId, { type: 'CONNECTOR_REMOVED', id }));
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STICKY_REMOVED', id: msg.id });
       }
       return;
     }
@@ -418,29 +497,26 @@ wss.on('connection', async (ws, req) => {
       const to = norm(msg.to);
       if (!from || !to) return;
       const connector = { id: msg.id, from, to, color: typeof msg.color === 'string' ? msg.color : '#94a3b8' };
-      connectors.push(connector);
-      persistBoard();
-      const payload = JSON.stringify({ type: 'CONNECTOR_ADDED', connector });
-      wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+      state.connectors.push(connector);
+      persistBoard(ws.boardId);
+      broadcastToBoard(ws.boardId, { type: 'CONNECTOR_ADDED', connector });
       return;
     }
     if (msg.type === 'UPDATE_CONNECTOR' && msg.id && typeof msg.color === 'string') {
-      const c = connectors.find((x) => x.id === msg.id);
+      const c = state.connectors.find((x) => x.id === msg.id);
       if (c) {
         c.color = msg.color;
-        persistBoard();
-        const payload = JSON.stringify({ type: 'CONNECTOR_UPDATED', id: msg.id, color: msg.color });
-        wss.clients.forEach((client) => { if (client.readyState === 1) client.send(payload); });
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'CONNECTOR_UPDATED', id: msg.id, color: msg.color });
       }
       return;
     }
     if (msg.type === 'DELETE_CONNECTOR' && msg.id) {
-      const i = connectors.findIndex((c) => c.id === msg.id);
+      const i = state.connectors.findIndex((c) => c.id === msg.id);
       if (i >= 0) {
-        connectors.splice(i, 1);
-        persistBoard();
-        const payload = JSON.stringify({ type: 'CONNECTOR_REMOVED', id: msg.id });
-        wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+        state.connectors.splice(i, 1);
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'CONNECTOR_REMOVED', id: msg.id });
       }
       return;
     }
@@ -454,14 +530,13 @@ wss.on('connection', async (ws, req) => {
         width: typeof msg.width === 'number' ? msg.width : TEXT_DEFAULT_W,
         height: typeof msg.height === 'number' ? msg.height : TEXT_DEFAULT_H
       };
-      textElements.push(el);
-      persistBoard();
-      const payload = JSON.stringify({ type: 'TEXT_ADDED', textElement: el });
-      wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+      state.textElements.push(el);
+      persistBoard(ws.boardId);
+      broadcastToBoard(ws.boardId, { type: 'TEXT_ADDED', textElement: el });
       return;
     }
     if (msg.type === 'UPDATE_TEXT_ELEMENT' && msg.id) {
-      const el = textElements.find((e) => e.id === msg.id);
+      const el = state.textElements.find((e) => e.id === msg.id);
       if (el) {
         const updates = {};
         if (typeof msg.text === 'string') { el.text = msg.text; updates.text = msg.text; }
@@ -470,39 +545,33 @@ wss.on('connection', async (ws, req) => {
         if (typeof msg.height === 'number' && msg.height >= 20) { el.height = msg.height; updates.height = msg.height; }
         if (typeof msg.rotation === 'number') { el.rotation = msg.rotation; updates.rotation = msg.rotation; }
         if (Object.keys(updates).length > 0) {
-          persistBoard();
-          const payload = JSON.stringify({ type: 'TEXT_UPDATED', id: msg.id, ...updates });
-          wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+          persistBoard(ws.boardId);
+          broadcastToBoard(ws.boardId, { type: 'TEXT_UPDATED', id: msg.id, ...updates });
         }
       }
       return;
     }
     if (msg.type === 'DELETE_TEXT_ELEMENT' && msg.id) {
-      const i = textElements.findIndex((e) => e.id === msg.id);
+      const i = state.textElements.findIndex((e) => e.id === msg.id);
       if (i >= 0) {
-        textElements.splice(i, 1);
-        const toRemoveIds = connectors.filter((c) => (c.from.type === 'text' && c.from.id === msg.id) || (c.to.type === 'text' && c.to.id === msg.id)).map((c) => c.id);
-        for (let k = connectors.length - 1; k >= 0; k--) {
-          if (toRemoveIds.includes(connectors[k].id)) connectors.splice(k, 1);
+        state.textElements.splice(i, 1);
+        const toRemoveIds = state.connectors.filter((c) => (c.from.type === 'text' && c.from.id === msg.id) || (c.to.type === 'text' && c.to.id === msg.id)).map((c) => c.id);
+        for (let k = state.connectors.length - 1; k >= 0; k--) {
+          if (toRemoveIds.includes(state.connectors[k].id)) state.connectors.splice(k, 1);
         }
-        toRemoveIds.forEach((id) => {
-          const payload = JSON.stringify({ type: 'CONNECTOR_REMOVED', id });
-          wss.clients.forEach((client) => { if (client.readyState === 1) client.send(payload); });
-        });
-        persistBoard();
-        const payload = JSON.stringify({ type: 'TEXT_REMOVED', id: msg.id });
-        wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+        toRemoveIds.forEach((id) => broadcastToBoard(ws.boardId, { type: 'CONNECTOR_REMOVED', id }));
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'TEXT_REMOVED', id: msg.id });
       }
       return;
     }
     if (msg.type === 'UPDATE_TEXT_POSITION' && msg.id && typeof msg.x === 'number' && typeof msg.y === 'number') {
-      const el = textElements.find((e) => e.id === msg.id);
+      const el = state.textElements.find((e) => e.id === msg.id);
       if (el) {
         el.x = msg.x;
         el.y = msg.y;
-        persistBoard();
-        const payload = JSON.stringify({ type: 'TEXT_MOVED', id: msg.id, x: msg.x, y: msg.y });
-        wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'TEXT_MOVED', id: msg.id, x: msg.x, y: msg.y });
       }
       return;
     }
@@ -515,14 +584,13 @@ wss.on('connection', async (ws, req) => {
         height: typeof msg.height === 'number' ? msg.height : FRAME_DEFAULT_H,
         title: typeof msg.title === 'string' ? msg.title : ''
       };
-      frames.push(frame);
-      persistBoard();
-      const payload = JSON.stringify({ type: 'FRAME_ADDED', frame });
-      wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+      state.frames.push(frame);
+      persistBoard(ws.boardId);
+      broadcastToBoard(ws.boardId, { type: 'FRAME_ADDED', frame });
       return;
     }
     if (msg.type === 'UPDATE_FRAME' && msg.id) {
-      const f = frames.find((x) => x.id === msg.id);
+      const f = state.frames.find((x) => x.id === msg.id);
       if (f) {
         const updates = {};
         if (typeof msg.x === 'number') { f.x = msg.x; updates.x = msg.x; }
@@ -531,94 +599,74 @@ wss.on('connection', async (ws, req) => {
         if (typeof msg.height === 'number' && msg.height >= 40) { f.height = msg.height; updates.height = msg.height; }
         if (typeof msg.title === 'string') { f.title = msg.title; updates.title = msg.title; }
         if (Object.keys(updates).length > 0) {
-          persistBoard();
-          const payload = JSON.stringify({ type: 'FRAME_UPDATED', id: msg.id, ...updates });
-          wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+          persistBoard(ws.boardId);
+          broadcastToBoard(ws.boardId, { type: 'FRAME_UPDATED', id: msg.id, ...updates });
         }
       }
       return;
     }
     if (msg.type === 'DELETE_FRAME' && msg.id) {
-      const i = frames.findIndex((f) => f.id === msg.id);
+      const i = state.frames.findIndex((f) => f.id === msg.id);
       if (i >= 0) {
-        frames.splice(i, 1);
-        persistBoard();
-        const payload = JSON.stringify({ type: 'FRAME_REMOVED', id: msg.id });
-        wss.clients.forEach((c) => { if (c.readyState === 1) c.send(payload); });
+        state.frames.splice(i, 1);
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'FRAME_REMOVED', id: msg.id });
       }
       return;
     }
     if (msg.type === 'UPDATE_STICKY_POSITION' && msg.id && typeof msg.x === 'number' && typeof msg.y === 'number') {
-      const s = stickies.find((s) => s.id === msg.id);
+      const s = state.stickies.find((s) => s.id === msg.id);
       if (s) {
         s.x = msg.x;
         s.y = msg.y;
-        persistBoard();
-        const payload = JSON.stringify({ type: 'STICKY_MOVED', id: msg.id, x: msg.x, y: msg.y });
-        wss.clients.forEach((c) => {
-          if (c.readyState === 1) c.send(payload);
-        });
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STICKY_MOVED', id: msg.id, x: msg.x, y: msg.y });
       }
       return;
     }
     if (msg.type === 'MOVE_STROKE' && msg.strokeId && typeof msg.dx === 'number' && typeof msg.dy === 'number') {
-      const s = strokes.find((s) => s.strokeId === msg.strokeId);
+      const s = state.strokes.find((s) => s.strokeId === msg.strokeId);
       if (s && s.points) {
         s.points.forEach((p) => {
           p.x += msg.dx;
           p.y += msg.dy;
         });
-        persistBoard();
-        const payload = JSON.stringify({ type: 'STROKE_MOVED', strokeId: msg.strokeId, dx: msg.dx, dy: msg.dy });
-        wss.clients.forEach((c) => {
-          if (c.readyState === 1) c.send(payload);
-        });
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STROKE_MOVED', strokeId: msg.strokeId, dx: msg.dx, dy: msg.dy });
       }
       return;
     }
     if (msg.type === 'SET_STROKE_COLOR' && msg.strokeId && typeof msg.color === 'string') {
-      const s = strokes.find((s) => s.strokeId === msg.strokeId);
+      const s = state.strokes.find((s) => s.strokeId === msg.strokeId);
       if (s) {
         s.color = msg.color;
-        persistBoard();
-        const payload = JSON.stringify({ type: 'STROKE_COLOR_CHANGED', strokeId: msg.strokeId, color: msg.color });
-        wss.clients.forEach((c) => {
-          if (c.readyState === 1) c.send(payload);
-        });
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STROKE_COLOR_CHANGED', strokeId: msg.strokeId, color: msg.color });
       }
       return;
     }
     if (msg.type === 'UPDATE_STROKE_POINTS' && msg.strokeId && Array.isArray(msg.points)) {
-      const s = strokes.find((s) => s.strokeId === msg.strokeId);
+      const s = state.strokes.find((s) => s.strokeId === msg.strokeId);
       if (s && msg.points.every((p) => typeof p.x === 'number' && typeof p.y === 'number')) {
         s.points = msg.points.map((p) => ({ x: p.x, y: p.y }));
-        persistBoard();
-        const payload = JSON.stringify({ type: 'STROKE_POINTS_UPDATED', strokeId: msg.strokeId, points: s.points });
-        wss.clients.forEach((c) => {
-          if (c.readyState === 1) c.send(payload);
-        });
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STROKE_POINTS_UPDATED', strokeId: msg.strokeId, points: s.points });
       }
       return;
     }
   });
 
   ws.on('close', () => {
-    cursors.delete(clientId);
-    const payload = JSON.stringify({ type: 'CURSOR_LEFT', clientId });
-    wss.clients.forEach((c) => {
-      if (c.readyState === 1) c.send(payload);
-    });
-    broadcastUsers();
+    const cursors = cursorsByBoard.get(ws.boardId);
+    if (cursors) cursors.delete(clientId);
+    broadcastToBoard(ws.boardId, { type: 'CURSOR_LEFT', clientId });
+    broadcastUsers(ws.boardId);
   });
 });
 
 // --- AI command route (LangChain + OpenAI 4o) ---
-function broadcast(payload) {
-  const s = typeof payload === 'string' ? payload : JSON.stringify(payload);
-  wss.clients.forEach((c) => { if (c.readyState === 1) c.send(s); });
-}
-
-function executeTool(name, args) {
+function executeTool(name, args, state, boardId) {
+  if (!state) return;
   const id = () => crypto.randomUUID();
   const parsePoint = (s) => {
     if (typeof s !== 'string') return null;
@@ -627,9 +675,9 @@ function executeTool(name, args) {
     return null;
   };
   const refFromId = (sid) => {
-    if (stickies.some((s) => s.id === sid)) return { type: 'sticky', id: sid };
-    if (textElements.some((t) => t.id === sid)) return { type: 'text', id: sid };
-    if (strokes.some((s) => s.strokeId === sid)) return { type: 'stroke', strokeId: sid };
+    if (state.stickies.some((s) => s.id === sid)) return { type: 'sticky', id: sid };
+    if (state.textElements.some((t) => t.id === sid)) return { type: 'text', id: sid };
+    if (state.strokes.some((s) => s.strokeId === sid)) return { type: 'stroke', strokeId: sid };
     const pt = parsePoint(sid);
     if (pt) return pt;
     return null;
@@ -641,9 +689,9 @@ function executeTool(name, args) {
       if (typeof x !== 'number' || typeof y !== 'number') return;
       const sid = id();
       const sticky = { id: sid, x, y, width: STICKY_DEFAULT_W, height: STICKY_DEFAULT_H, text, color };
-      stickies.push(sticky);
-      persistBoard();
-      broadcast({ type: 'STICKY_ADDED', sticky });
+      state.stickies.push(sticky);
+      persistBoard(boardId);
+      broadcastToBoard(boardId, { type: 'STICKY_ADDED', sticky });
       break;
     }
     case 'createShape': {
@@ -652,11 +700,11 @@ function executeTool(name, args) {
       const shape = type === 'circle' ? 'circle' : 'rect';
       const strokeId = id();
       const points = [{ x, y }, { x: x + width, y: y + height }];
-      const seq = nextSeq++;
+      const seq = state.nextSeq++;
       const stroke = { seq, strokeId, points, color, shape };
-      strokes.push(stroke);
-      persistBoard();
-      broadcast({ type: 'STROKE_ADDED', stroke });
+      state.strokes.push(stroke);
+      persistBoard(boardId);
+      broadcastToBoard(boardId, { type: 'STROKE_ADDED', stroke });
       break;
     }
     case 'createFrame': {
@@ -664,9 +712,9 @@ function executeTool(name, args) {
       if (typeof x !== 'number' || typeof y !== 'number') return;
       const fid = id();
       const frame = { id: fid, x, y, width, height, title };
-      frames.push(frame);
-      persistBoard();
-      broadcast({ type: 'FRAME_ADDED', frame });
+      state.frames.push(frame);
+      persistBoard(boardId);
+      broadcastToBoard(boardId, { type: 'FRAME_ADDED', frame });
       break;
     }
     case 'createQuadrantTemplate': {
@@ -685,10 +733,10 @@ function executeTool(name, args) {
       for (let i = 0; i < 4; i++) {
         const fid = id();
         const frame = { id: fid, x: positions[i].x, y: positions[i].y, width: w, height: h, title: titles[i] || '' };
-        frames.push(frame);
-        broadcast({ type: 'FRAME_ADDED', frame });
+        state.frames.push(frame);
+        broadcastToBoard(boardId, { type: 'FRAME_ADDED', frame });
       }
-      persistBoard();
+      persistBoard(boardId);
       break;
     }
     case 'createConnector': {
@@ -697,36 +745,36 @@ function executeTool(name, args) {
       if (!from || !to) return;
       const cid = id();
       const connector = { id: cid, from, to, color: typeof args.style === 'string' ? args.style : '#94a3b8' };
-      connectors.push(connector);
-      persistBoard();
-      broadcast({ type: 'CONNECTOR_ADDED', connector });
+      state.connectors.push(connector);
+      persistBoard(boardId);
+      broadcastToBoard(boardId, { type: 'CONNECTOR_ADDED', connector });
       break;
     }
     case 'moveObject': {
       const { objectId, x, y } = args;
       if (typeof x !== 'number' || typeof y !== 'number') return;
-      const s = stickies.find((o) => o.id === objectId);
+      const s = state.stickies.find((o) => o.id === objectId);
       if (s) {
         s.x = x; s.y = y;
-        persistBoard();
-        broadcast({ type: 'STICKY_MOVED', id: objectId, x, y });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STICKY_MOVED', id: objectId, x, y });
         break;
       }
-      const t = textElements.find((o) => o.id === objectId);
+      const t = state.textElements.find((o) => o.id === objectId);
       if (t) {
         t.x = x; t.y = y;
-        persistBoard();
-        broadcast({ type: 'TEXT_MOVED', id: objectId, x, y });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'TEXT_MOVED', id: objectId, x, y });
         break;
       }
-      const f = frames.find((o) => o.id === objectId);
+      const f = state.frames.find((o) => o.id === objectId);
       if (f) {
         f.x = x; f.y = y;
-        persistBoard();
-        broadcast({ type: 'FRAME_UPDATED', id: objectId, x, y });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'FRAME_UPDATED', id: objectId, x, y });
         break;
       }
-      const stroke = strokes.find((o) => o.strokeId === objectId);
+      const stroke = state.strokes.find((o) => o.strokeId === objectId);
       if (stroke && stroke.points) {
         const cx = stroke.shape === 'rect' || stroke.shape === 'circle'
           ? (stroke.points[0].x + stroke.points[1].x) / 2
@@ -736,94 +784,93 @@ function executeTool(name, args) {
           : stroke.points.reduce((a, p) => a + p.y, 0) / stroke.points.length;
         const dx = x - cx, dy = y - cy;
         stroke.points.forEach((p) => { p.x += dx; p.y += dy; });
-        persistBoard();
-        broadcast({ type: 'STROKE_MOVED', strokeId: objectId, dx, dy });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STROKE_MOVED', strokeId: objectId, dx, dy });
       }
       break;
     }
     case 'resizeObject': {
       const { objectId, width, height } = args;
-      const st = stickies.find((o) => o.id === objectId);
+      const st = state.stickies.find((o) => o.id === objectId);
       if (st && width >= 40 && height >= 30) {
         st.width = width; st.height = height;
-        persistBoard();
-        broadcast({ type: 'STICKY_UPDATED', id: objectId, width, height });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STICKY_UPDATED', id: objectId, width, height });
         break;
       }
-      const te = textElements.find((o) => o.id === objectId);
+      const te = state.textElements.find((o) => o.id === objectId);
       if (te) {
         te.width = width; te.height = height;
-        persistBoard();
-        broadcast({ type: 'TEXT_UPDATED', id: objectId, width, height });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'TEXT_UPDATED', id: objectId, width, height });
         break;
       }
-      const fr = frames.find((o) => o.id === objectId);
+      const fr = state.frames.find((o) => o.id === objectId);
       if (fr && width >= 60 && height >= 40) {
         fr.width = width; fr.height = height;
-        persistBoard();
-        broadcast({ type: 'FRAME_UPDATED', id: objectId, width, height });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'FRAME_UPDATED', id: objectId, width, height });
         break;
       }
-      const str = strokes.find((o) => o.strokeId === objectId);
+      const str = state.strokes.find((o) => o.strokeId === objectId);
       if (str && (str.shape === 'rect' || str.shape === 'circle') && str.points && str.points.length >= 2) {
         const p0 = str.points[0];
         str.points[1] = { x: p0.x + width, y: p0.y + height };
-        persistBoard();
-        broadcast({ type: 'STROKE_POINTS_UPDATED', strokeId: objectId, points: str.points });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STROKE_POINTS_UPDATED', strokeId: objectId, points: str.points });
       }
       break;
     }
     case 'updateText': {
       const { objectId, newText } = args;
-      const stick = stickies.find((o) => o.id === objectId);
+      const stick = state.stickies.find((o) => o.id === objectId);
       if (stick) {
         stick.text = typeof newText === 'string' ? newText : '';
-        persistBoard();
-        broadcast({ type: 'STICKY_UPDATED', id: objectId, text: stick.text });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STICKY_UPDATED', id: objectId, text: stick.text });
         break;
       }
-      const txt = textElements.find((o) => o.id === objectId);
+      const txt = state.textElements.find((o) => o.id === objectId);
       if (txt) {
         txt.text = typeof newText === 'string' ? newText : '';
-        persistBoard();
-        broadcast({ type: 'TEXT_UPDATED', id: objectId, text: txt.text });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'TEXT_UPDATED', id: objectId, text: txt.text });
       }
       break;
     }
     case 'changeColor': {
       const { objectId, color } = args;
       if (typeof color !== 'string') return;
-      const stick = stickies.find((o) => o.id === objectId);
+      const stick = state.stickies.find((o) => o.id === objectId);
       if (stick) {
         stick.color = color;
-        persistBoard();
-        broadcast({ type: 'STICKY_UPDATED', id: objectId, color });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STICKY_UPDATED', id: objectId, color });
         break;
       }
-      const txt = textElements.find((o) => o.id === objectId);
+      const txt = state.textElements.find((o) => o.id === objectId);
       if (txt) {
         txt.color = color;
-        persistBoard();
-        broadcast({ type: 'TEXT_UPDATED', id: objectId, color });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'TEXT_UPDATED', id: objectId, color });
         break;
       }
-      const str = strokes.find((o) => o.strokeId === objectId);
+      const str = state.strokes.find((o) => o.strokeId === objectId);
       if (str) {
         str.color = color;
-        persistBoard();
-        broadcast({ type: 'STROKE_COLOR_CHANGED', strokeId: objectId, color });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STROKE_COLOR_CHANGED', strokeId: objectId, color });
         break;
       }
-      const conn = connectors.find((o) => o.id === objectId);
+      const conn = state.connectors.find((o) => o.id === objectId);
       if (conn) {
         conn.color = color;
-        persistBoard();
-        broadcast({ type: 'CONNECTOR_UPDATED', id: objectId, color });
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'CONNECTOR_UPDATED', id: objectId, color });
       }
       break;
     }
     case 'getBoardState':
-      // No-op on server; model uses state we passed in the prompt
       break;
     default:
       break;
@@ -848,16 +895,25 @@ app.post('/api/ai/command', async (req, res) => {
   if (!session) {
     return res.status(401).json({ error: 'Not authenticated', hint: 'Session expired or invalid. Sign in again.' });
   }
-  const { command } = req.body || {};
+  const { command, boardId } = req.body || {};
   if (typeof command !== 'string' || !command.trim()) {
     return res.status(400).json({ error: 'Missing or empty command' });
   }
   if (!process.env.OPENAI_API_KEY) {
     return res.status(503).json({ error: 'OpenAI API key not configured. Add OPENAI_API_KEY to .env' });
   }
+  const bid = typeof boardId === 'string' && boardId.trim() ? boardId.trim() : null;
+  if (db.hasDatabase() && !bid) {
+    return res.status(400).json({ error: 'Missing boardId. Open a whiteboard first.' });
+  }
+  if (db.hasDatabase() && session.userId) {
+    const allowed = await db.isUserInWhiteboard(session.userId, bid);
+    if (!allowed) return res.status(403).json({ error: 'Not allowed on this whiteboard' });
+  }
   try {
+    const state = bid ? await ensureBoardState(bid) : getBoardState('default');
     const boardStateJson = JSON.stringify({
-      stickies: stickies.map((s) => ({
+      stickies: (state.stickies || []).map((s) => ({
         id: s.id,
         x: s.x,
         y: s.y,
@@ -866,13 +922,13 @@ app.post('/api/ai/command', async (req, res) => {
         text: (s.text || '').slice(0, 200),
         color: s.color
       })),
-      strokes: strokes.map((s) => ({
+      strokes: (state.strokes || []).map((s) => ({
         strokeId: s.strokeId,
         shape: s.shape,
         color: s.color,
         points: s.points && s.points.length ? s.points.slice(0, 2) : []
       })),
-      textElements: textElements.map((t) => ({
+      textElements: (state.textElements || []).map((t) => ({
         id: t.id,
         x: t.x,
         y: t.y,
@@ -881,7 +937,7 @@ app.post('/api/ai/command', async (req, res) => {
         text: (t.text || '').slice(0, 200),
         color: t.color
       })),
-      frames: frames.map((f) => ({
+      frames: (state.frames || []).map((f) => ({
         id: f.id,
         x: f.x,
         y: f.y,
@@ -889,7 +945,7 @@ app.post('/api/ai/command', async (req, res) => {
         height: f.height,
         title: (f.title || '').slice(0, 100)
       })),
-      connectors: connectors.map((c) => ({
+      connectors: (state.connectors || []).map((c) => ({
         id: c.id,
         from: c.from,
         to: c.to,
@@ -897,11 +953,12 @@ app.post('/api/ai/command', async (req, res) => {
       }))
     });
     const { message, toolCalls, viewCenter } = await runAiCommand(command.trim(), boardStateJson);
+    const targetBoardId = bid || 'default';
     for (const tc of toolCalls) {
-      executeTool(tc.name, tc.args);
+      executeTool(tc.name, tc.args, state, targetBoardId);
     }
     const payload = { ok: true, message, toolCalls: toolCalls.length };
-    const bounds = getBoardWorldBounds();
+    const bounds = getBoardWorldBounds(state);
     if (bounds) {
       payload.viewFitBounds = bounds;
     } else if (viewCenter && typeof viewCenter.x === 'number' && typeof viewCenter.y === 'number') {
@@ -927,20 +984,6 @@ function broadcastUsers() {
 
 async function main() {
   await db.init();
-  const loaded = await db.loadBoardState();
-  if (loaded) {
-    strokes.length = 0;
-    strokes.push(...(loaded.strokes || []));
-    stickies.length = 0;
-    stickies.push(...(loaded.stickies || []));
-    textElements.length = 0;
-    textElements.push(...(loaded.textElements || []));
-    connectors.length = 0;
-    connectors.push(...(loaded.connectors || []));
-    frames.length = 0;
-    frames.push(...(loaded.frames || []));
-    nextSeq = typeof loaded.nextSeq === 'number' ? loaded.nextSeq : 0;
-  }
   server.listen(PORT, () => {
     console.log(`http://localhost:${PORT}`);
   });
