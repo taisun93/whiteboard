@@ -1362,7 +1362,7 @@ function connectorEndpointWorld(ref, otherRef) {
 const ARROW_HEAD_LEN = 10;
 
 function drawArrowhead(ctx, fromX, fromY, toX, toY, color) {
-  const headLen = Math.max(8, ARROW_HEAD_LEN / zoom);
+  const headLen = Math.max(4, ARROW_HEAD_LEN * zoom);
   const angle = Math.atan2(toY - fromY, toX - fromX);
   ctx.fillStyle = color;
   ctx.beginPath();
@@ -1374,7 +1374,7 @@ function drawArrowhead(ctx, fromX, fromY, toX, toY, color) {
 }
 
 function lineEndBeforeArrowhead(fromX, fromY, toX, toY) {
-  const headLen = Math.max(8, ARROW_HEAD_LEN / zoom);
+  const headLen = Math.max(4, ARROW_HEAD_LEN * zoom);
   const dx = toX - fromX, dy = toY - fromY;
   const len = Math.hypot(dx, dy);
   if (len <= headLen) return { x: fromX, y: fromY };

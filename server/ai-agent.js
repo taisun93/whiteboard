@@ -130,6 +130,14 @@ const tools = [
     func: async () => 'Tool will be executed by server.'
   }),
   new DynamicStructuredTool({
+    name: 'deleteObject',
+    description: 'Delete (remove) an object from the board. Use for stickies, text elements, frames, shapes (strokes), or connectors. Call getBoardState first to get the object id (sticky id, text id, frame id, strokeId, or connector id).',
+    schema: z.object({
+      objectId: z.string().describe('ID of the object to delete (from getBoardState: stickies[].id, textElements[].id, frames[].id, strokes[].strokeId, or connectors[].id)')
+    }),
+    func: async () => 'Tool will be executed by server.'
+  }),
+  new DynamicStructuredTool({
     name: 'getBoardState',
     description: 'Get the current board state with full details: stickies (id, x, y, width, height, text, color), strokes (strokeId, shape, color, points), textElements (id, x, y, width, height, text, color), frames (id, x, y, width, height, title), connectors (id, from, to, color). Use this to see existing IDs, colors, and positions before moving, resizing, changing colors, or connecting.',
     schema: z.object({}),
@@ -152,6 +160,8 @@ function getBoundModel() {
 }
 
 const SYSTEM_PROMPT = `You are an assistant that helps users edit a shared whiteboard. The user will give you a natural language command. Use the available tools to change the board. Coordinates and sizes are in world units (e.g. 100, 200).
+
+Erase and delete: When the user says "erase", "remove", "delete", "clear", "get rid of", or similar, treat that as applying the deleteObject tool to the indicated item(s). Call getBoardState to find the object id(s), then call deleteObject(objectId) for each item they want removed.
 
 Avoiding overlap: When creating new elements (stickies, frames, shapes, text, connectors), avoid placing them where there is already content. Existing content includes: stickies, text elements, frames, shapes (strokes), and lines/connectors/arrows. You receive board state with id, x, y, width, height (and strokes have points; connectors have from/to). Before calling createStickyNote, createFrame, createShape, createFlowchartNode, or createConnector, check where existing items and lines are. Choose x,y so the new object's bounding box does not overlap existing items—leave at least 20–40 units of space between the new element and any existing stickies, frames, text, shapes, or connector paths. If the board already has content, place new items to the right, below, or in a clear empty region. When creating multiple items (e.g. a template or flowchart), space them in a grid with gaps (e.g. 20–30 units) so they do not overlap each other or existing content.
 

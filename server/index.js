@@ -1130,6 +1130,50 @@ function executeTool(name, args, state, boardId) {
       }
       break;
     }
+    case 'deleteObject': {
+      const { objectId } = args;
+      if (!objectId) break;
+      const stickyIdx = state.stickies.findIndex((o) => o.id === objectId);
+      if (stickyIdx >= 0) {
+        state.stickies.splice(stickyIdx, 1);
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STICKY_REMOVED', id: objectId });
+        break;
+      }
+      const textIdx = state.textElements.findIndex((o) => o.id === objectId);
+      if (textIdx >= 0) {
+        state.textElements.splice(textIdx, 1);
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'TEXT_REMOVED', id: objectId });
+        break;
+      }
+      const frameIdx = state.frames.findIndex((o) => o.id === objectId);
+      if (frameIdx >= 0) {
+        state.frames.splice(frameIdx, 1);
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'FRAME_REMOVED', id: objectId });
+        break;
+      }
+      const strokeIdx = state.strokes.findIndex((o) => o.strokeId === objectId);
+      if (strokeIdx >= 0) {
+        const connIds = state.connectors
+          .filter((c) => (c.from.type === 'stroke' && c.from.strokeId === objectId) || (c.to.type === 'stroke' && c.to.strokeId === objectId))
+          .map((c) => c.id);
+        state.connectors = state.connectors.filter((c) => !connIds.includes(c.id));
+        connIds.forEach((cid) => broadcastToBoard(boardId, { type: 'CONNECTOR_REMOVED', id: cid }));
+        state.strokes.splice(strokeIdx, 1);
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'STROKES_REMOVED', strokeIds: [objectId] });
+        break;
+      }
+      const connIdx = state.connectors.findIndex((o) => o.id === objectId);
+      if (connIdx >= 0) {
+        state.connectors.splice(connIdx, 1);
+        persistBoard(boardId);
+        broadcastToBoard(boardId, { type: 'CONNECTOR_REMOVED', id: objectId });
+      }
+      break;
+    }
     case 'getBoardState':
       break;
     default:
