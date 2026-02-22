@@ -91,16 +91,6 @@
       z-index: 100; display: flex; flex-direction: column;
       box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
     }
-    #ai-command-panel.ai-panel-collapsed .ai-panel-body { display: none; }
-    #ai-command-panel:not(.ai-panel-collapsed) .ai-panel-toggle-icon { transform: rotate(-90deg); }
-    .ai-panel-toggle {
-      display: flex; align-items: center; gap: 8px;
-      padding: 10px 14px; border: none; background: transparent;
-      color: #94a3b8; font-size: 13px; cursor: pointer;
-      text-align: left; width: 100%;
-    }
-    .ai-panel-toggle:hover { background: #1e293b; color: #e2e8f0; }
-    .ai-panel-toggle-icon { font-size: 10px; transition: transform 0.2s; }
     .ai-panel-body { padding: 12px 14px 16px; max-height: 220px; overflow: auto; }
     .ai-panel-label {
       display: block; font-size: 11px; color: #94a3b8; margin-bottom: 6px;
@@ -188,11 +178,7 @@
       <div id="users-list"></div>
     </aside>
   </div>
-  <div id="ai-command-panel" class="ai-panel-collapsed">
-    <button type="button" id="ai-panel-toggle" class="ai-panel-toggle" aria-label="Toggle AI command panel">
-      <span class="ai-panel-toggle-icon">◆</span>
-      <span class="ai-panel-toggle-label">AI commands</span>
-    </button>
+  <div id="ai-command-panel">
     <div class="ai-panel-body">
       <label for="ai-command-input" class="ai-panel-label">Describe what you want on the board. Commands will be run by AI.</label>
       <textarea id="ai-command-input" class="ai-command-input" rows="3" placeholder="e.g. Add a sticky note that says Welcome at 100, 100"></textarea>

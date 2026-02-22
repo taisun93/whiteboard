@@ -49,7 +49,7 @@ let currentStrokeId = null;
 let cursorThrottle = 0;
 const CURSOR_THROTTLE_MS = 50;
 let myClientId = null;
-let tool = 'draw'; // 'draw' | 'erase' | 'sticky' | 'move' | 'fill' | 'rect' | 'circle' | 'arrow'
+let tool = 'move'; // 'draw' | 'erase' | 'sticky' | 'move' | 'fill' | 'rect' | 'circle' | 'arrow'
 let pendingShape = null; // { type: 'rect'|'circle', p1: {x,y}, p2: {x,y} }
 let pendingFrame = null; // { p1: {x,y}, p2: {x,y} }
 let connectorPendingFrom = null; // { type:'sticky', id } | { type:'point', x, y } when waiting for second click
@@ -952,6 +952,18 @@ function centerView(worldX, worldY, zoomLevel) {
   draw();
   renderStickies();
   renderTextElements();
+}
+
+/** Fit the view so the given world bounds are visible. Used after AI commands. */
+function fitViewToBounds(minX, minY, maxX, maxY) {
+  const w = Math.max(maxX - minX, 1);
+  const h = Math.max(maxY - minY, 1);
+  const centerX = (minX + maxX) / 2;
+  const centerY = (minY + maxY) / 2;
+  const zoomW = CANVAS_W / w;
+  const zoomH = CANVAS_H / h;
+  const newZoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.min(zoomW, zoomH)));
+  centerView(centerX, centerY, newZoom);
 }
 
 function strokeCenterWorld(s) {
@@ -2271,7 +2283,8 @@ window.whiteboard = {
   updateText,
   changeColor,
   getBoardState,
-  centerView
+  centerView,
+  fitViewToBounds
 };
 Object.keys(window.whiteboard).forEach((k) => { window[k] = window.whiteboard[k]; });
 
@@ -2282,16 +2295,10 @@ window.addEventListener('resize', () => {
 
 // AI command panel: POST to /api/ai/command (LangChain + GPT-4o), show result
 (function initAiCommandPanel() {
-  const panel = document.getElementById('ai-command-panel');
-  const toggle = document.getElementById('ai-panel-toggle');
   const input = document.getElementById('ai-command-input');
   const runBtn = document.getElementById('ai-command-run');
   const statusEl = document.getElementById('ai-command-status');
-  if (!panel || !toggle || !input || !runBtn) return;
-
-  toggle.addEventListener('click', () => {
-    panel.classList.toggle('ai-panel-collapsed');
-  });
+  if (!input || !runBtn) return;
 
   function setStatus(msg, type) {
     if (!statusEl) return;
@@ -2321,7 +2328,10 @@ window.addEventListener('resize', () => {
       const msg = data.message || 'Done.';
       const n = data.toolCalls;
       setStatus(n ? `${msg} (${n} tool${n === 1 ? '' : 's'} run)` : msg, 'success');
-      if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
+      if (data.viewFitBounds && typeof data.viewFitBounds.minX === 'number' && typeof data.viewFitBounds.minY === 'number') {
+        const b = data.viewFitBounds;
+        fitViewToBounds(b.minX, b.minY, b.maxX, b.maxY);
+      } else if (data.viewCenter && typeof data.viewCenter.x === 'number' && typeof data.viewCenter.y === 'number') {
         centerView(data.viewCenter.x, data.viewCenter.y, data.viewCenter.zoom);
       }
     } catch (err) {
@@ -2342,3 +2352,4 @@ window.addEventListener('resize', () => {
 
 connect();
 draw();
+applyToolUI();

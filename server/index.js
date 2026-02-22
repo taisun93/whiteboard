@@ -204,6 +204,40 @@ const TEXT_DEFAULT_H = 28;
 const FRAME_DEFAULT_W = 300;
 const FRAME_DEFAULT_H = 200;
 
+/** World bounds of all board content for fit-view. Returns { minX, minY, maxX, maxY } or null if empty. */
+function getBoardWorldBounds() {
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  const expand = (x, y) => {
+    if (Number.isFinite(x)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); }
+    if (Number.isFinite(y)) { minY = Math.min(minY, y); maxY = Math.max(maxY, y); }
+  };
+  stickies.forEach((s) => {
+    expand(s.x, s.y);
+    expand(s.x + (s.width || STICKY_DEFAULT_W), s.y + (s.height || STICKY_DEFAULT_H));
+  });
+  textElements.forEach((t) => {
+    expand(t.x, t.y);
+    expand(t.x + (t.width || TEXT_DEFAULT_W), t.y + (t.height || TEXT_DEFAULT_H));
+  });
+  frames.forEach((f) => {
+    expand(f.x, f.y);
+    expand(f.x + (f.width || FRAME_DEFAULT_W), f.y + (f.height || FRAME_DEFAULT_H));
+  });
+  strokes.forEach((s) => {
+    if (s.points && s.points.length) s.points.forEach((p) => expand(p.x, p.y));
+  });
+  if (minX === Infinity || minY === Infinity) return null;
+  const pad = 0.15;
+  const w = Math.max(maxX - minX, 1);
+  const h = Math.max(maxY - minY, 1);
+  return {
+    minX: minX - w * pad,
+    minY: minY - h * pad,
+    maxX: maxX + w * pad,
+    maxY: maxY + h * pad
+  };
+}
+
 function persistBoard() {
   db.saveBoardState({ strokes, stickies, textElements, connectors, frames, nextSeq }).catch((err) =>
     console.error('persist board:', err)
@@ -867,7 +901,10 @@ app.post('/api/ai/command', async (req, res) => {
       executeTool(tc.name, tc.args);
     }
     const payload = { ok: true, message, toolCalls: toolCalls.length };
-    if (viewCenter && typeof viewCenter.x === 'number' && typeof viewCenter.y === 'number') {
+    const bounds = getBoardWorldBounds();
+    if (bounds) {
+      payload.viewFitBounds = bounds;
+    } else if (viewCenter && typeof viewCenter.x === 'number' && typeof viewCenter.y === 'number') {
       payload.viewCenter = viewCenter;
     }
     res.json(payload);
