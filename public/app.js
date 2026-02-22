@@ -651,8 +651,10 @@ function draw() {
     if (f.title) {
       ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
       const titleFontSize = Math.max(6, h * 0.12);
+      const padH = titleFontSize * 0.7;
+      const padV = titleFontSize * 0.5;
       ctx.font = `bold ${titleFontSize}px system-ui`;
-      ctx.fillText(f.title, x + 8, y + titleFontSize + 6);
+      ctx.fillText(f.title, x + padH, y + titleFontSize + padV);
     }
   });
   if (pendingFrame) {
