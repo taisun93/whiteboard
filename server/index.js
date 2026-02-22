@@ -368,10 +368,29 @@ function broadcastUsers(boardId) {
   wss.clients.forEach((c) => { if (onBoard(c)) c.send(payload); });
 }
 
-/** Mark board as dirty; actual save to Postgres and/or Redis happens in the periodic flush. */
+/** Serialize board state for Redis (same shape as load expects). */
+function boardStateToPayload(state) {
+  return {
+    strokes: state.strokes,
+    stickies: state.stickies,
+    textElements: state.textElements,
+    connectors: state.connectors,
+    frames: state.frames,
+    nextSeq: state.nextSeq
+  };
+}
+
+/** Mark board as dirty; save to Postgres in periodic flush. When Redis is available, write this board to Redis immediately so all boards use Redis as short-term cache. */
 function persistBoard(boardId) {
   if (!boardId) return;
   if (db.hasDatabase() || redis.isAvailable()) dirtyBoards.add(boardId);
+  if (redis.isAvailable()) {
+    const state = getBoardState(boardId);
+    const payload = boardStateToPayload(state);
+    redis.set(BOARD_STATE_KEY_PREFIX + boardId, payload, 0).catch((err) =>
+      console.error('persist board to Redis:', err.message || err)
+    );
+  }
 }
 
 /** World bounds of all board content for fit-view. Returns { minX, minY, maxX, maxY } or null if empty. */
@@ -439,14 +458,7 @@ const heartbeatInterval = setInterval(() => {
         });
       }
       if (redis.isAvailable()) {
-        const payload = {
-          strokes: state.strokes,
-          stickies: state.stickies,
-          textElements: state.textElements,
-          connectors: state.connectors,
-          frames: state.frames,
-          nextSeq: state.nextSeq
-        };
+        const payload = boardStateToPayload(state);
         redis.set(BOARD_STATE_KEY_PREFIX + boardId, payload, 0).catch((err) => {
           console.error('persist board to Redis:', err.message || err);
           dirtyBoards.add(boardId);
