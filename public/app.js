@@ -52,6 +52,8 @@ function fetchWithTimeout(url, options, ms) {
 }
 
 let ws = null;
+/** Messages to send when connection is (re)established; flushed on STATE so offline edits sync. */
+let pendingSends = [];
 let drawing = false;
 let currentPoints = [];
 let currentStrokeId = null;
@@ -114,6 +116,16 @@ function updateBoardTitle() {
 const KEEPALIVE_INTERVAL_MS = 12000;
 let keepaliveTimerId = null;
 
+function sendRaw(msg) {
+  try { if (ws) ws.send(JSON.stringify(msg)); } catch (_) {}
+}
+
+/** Send a message now if connected, otherwise queue for when we reconnect (optimistic UI). */
+function sendToServer(msg) {
+  if (ws && ws.readyState === WebSocket.OPEN) sendRaw(msg);
+  else pendingSends.push(msg);
+}
+
 /** Clear all board state and reset view/tool state (e.g. when switching boards). */
 function clearBoardStateForSwitch() {
   strokes.length = 0;
@@ -145,6 +157,7 @@ function clearBoardStateForSwitch() {
   movingStrokeId = null;
   resizingStickyId = null;
   resizingStrokeId = null;
+  pendingSends.length = 0;
 }
 
 function connect(boardId) {
@@ -173,7 +186,7 @@ function connect(boardId) {
     statusEl.classList.add('connected');
     keepaliveTimerId = setInterval(() => {
       if (ws && ws.readyState === WebSocket.OPEN) {
-        try { ws.send(JSON.stringify({ type: 'PING' })); } catch (_) {}
+        try { sendToServer({ type: 'PING' }); } catch (_) {}
       }
     }, KEEPALIVE_INTERVAL_MS);
   };
@@ -216,19 +229,24 @@ function connect(boardId) {
       return;
     }
     if (msg.type === 'STATE') {
-      strokes.length = 0;
-      (msg.strokes || []).forEach((s) => strokes.push(s));
-      stickies.length = 0;
-      (msg.stickies || []).forEach((s) => stickies.push(s));
-      connectors.length = 0;
-      (msg.connectors || []).forEach((c) => connectors.push(c));
-      textElements.length = 0;
-      (msg.textElements || []).forEach((e) => textElements.push(e));
-      frames.length = 0;
-      (msg.frames || []).forEach((f) => frames.push(f));
-      renderStickies();
-      renderTextElements();
-      draw();
+      if (pendingSends.length > 0) {
+        for (let i = 0; i < pendingSends.length; i++) sendRaw(pendingSends[i]);
+        pendingSends.length = 0;
+      } else {
+        strokes.length = 0;
+        (msg.strokes || []).forEach((s) => strokes.push(s));
+        stickies.length = 0;
+        (msg.stickies || []).forEach((s) => stickies.push(s));
+        connectors.length = 0;
+        (msg.connectors || []).forEach((c) => connectors.push(c));
+        textElements.length = 0;
+        (msg.textElements || []).forEach((e) => textElements.push(e));
+        frames.length = 0;
+        (msg.frames || []).forEach((f) => frames.push(f));
+        renderStickies();
+        renderTextElements();
+        draw();
+      }
     } else if (msg.type === 'STROKE_ADDED') {
       const { stroke } = msg;
       if (pending.has(stroke.strokeId)) {
@@ -310,7 +328,7 @@ function connect(boardId) {
     } else if (msg.type === 'STROKE_POINTS_UPDATED') {
       const stroke = strokes.find((s) => s.strokeId === msg.strokeId);
       if (stroke && Array.isArray(msg.points)) {
-        stroke.points = msg.points.map((p) => ({ x: p.x, y: p.y }));
+        stroke.points = msg.points.map((p) => ({ x: p.x, y: p.y });
         draw();
       }
     } else if (msg.type === 'STROKE_ROTATION_CHANGED') {
@@ -470,8 +488,8 @@ function renderStickies() {
           if (resizingStickyId !== s.id) return;
           ev.target.releasePointerCapture(e2.pointerId);
           const st = stickies.find((x) => x.id === s.id);
-          if (st && (st.width !== initialStickyW || st.height !== initialStickyH) && ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: s.id, width: st.width, height: st.height }));
+          if (st && (st.width !== initialStickyW || st.height !== initialStickyH)) {
+            sendToServer({ type: 'UPDATE_STICKY', id: s.id, width: st.width, height: st.height });
           }
           resizingStickyId = null;
           document.removeEventListener('pointermove', onMove);
@@ -493,7 +511,7 @@ function renderStickies() {
           const st = stickies.find((x) => x.id === s.id);
           if (st) {
             st.color = selectedColor;
-            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: s.id, color: selectedColor }));
+            sendToServer({ type: 'UPDATE_STICKY', id: s.id, color: selectedColor });
             renderStickies();
           }
         }
@@ -524,8 +542,8 @@ function renderStickies() {
             if (e2.shiftKey) addToSelection('sticky', s.id);
             else setSelection('sticky', s.id);
             renderStickies();
-          } else if (ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({ type: 'UPDATE_STICKY_POSITION', id: s.id, x: s.x, y: s.y }));
+          } else if (true) {
+            sendToServer({ type: 'UPDATE_STICKY_POSITION', id: s.id, x: s.x, y: s.y });
           }
           movingStickyId = null;
           document.removeEventListener('pointermove', onMove);
@@ -541,7 +559,7 @@ function renderStickies() {
           const text = body.value;
           const st = stickies.find((x) => x.id === s.id);
           if (st) st.text = text;
-          if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: s.id, text }));
+          sendToServer({ type: 'UPDATE_STICKY', id: s.id, text });
         }, 300);
       });
       body.addEventListener('pointerdown', (e) => {
@@ -557,7 +575,7 @@ function renderStickies() {
           const st = stickies.find((x) => x.id === s.id);
           if (st) {
             st.color = selectedColor;
-            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: s.id, color: selectedColor }));
+            sendToServer({ type: 'UPDATE_STICKY', id: s.id, color: selectedColor });
             renderStickies();
           }
         } else e.stopPropagation();
@@ -565,7 +583,7 @@ function renderStickies() {
       delBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_STICKY', id: s.id }));
+        sendToServer({ type: 'DELETE_STICKY', id: s.id });
       });
       layer.appendChild(el);
     } else {
@@ -641,7 +659,7 @@ function renderTextElements() {
           const t = textElements.find((x) => x.id === el.id);
           if (t) {
             t.color = selectedColor;
-            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id: el.id, color: selectedColor }));
+            sendToServer({ type: 'UPDATE_TEXT_ELEMENT', id: el.id, color: selectedColor });
             renderTextElements();
           }
         }
@@ -654,7 +672,7 @@ function renderTextElements() {
           const t = textElements.find((x) => x.id === el.id);
           if (t) {
             t.text = text;
-            if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id: el.id, text }));
+            sendToServer({ type: 'UPDATE_TEXT_ELEMENT', id: el.id, text });
           }
         }, 300);
       });
@@ -686,9 +704,9 @@ function renderTextElements() {
               if (e2.shiftKey) addToSelection('text', el.id);
               else setSelection('text', el.id);
               renderTextElements();
-            } else if (ws && ws.readyState === 1) {
+            } else if (true) {
               const t = textElements.find((x) => x.id === el.id);
-              if (t) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_POSITION', id: el.id, x: t.x, y: t.y }));
+              if (t) sendToServer({ type: 'UPDATE_TEXT_POSITION', id: el.id, x: t.x, y: t.y });
             }
             movingTextId = null;
             document.removeEventListener('pointermove', onMove);
@@ -701,7 +719,7 @@ function renderTextElements() {
       delBtn.addEventListener('click', (e) => {
         e.preventDefault();
         e.stopPropagation();
-        if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_TEXT_ELEMENT', id: el.id }));
+        sendToServer({ type: 'DELETE_TEXT_ELEMENT', id: el.id });
       });
       layer.appendChild(div);
     } else {
@@ -1352,7 +1370,7 @@ function handleConnectorEndpoint(ref) {
   const id = uuid();
   const connector = { id, from: connectorPendingFrom, to: ref, color: selectedColor };
   connectors.push(connector);
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'ADD_CONNECTOR', id, from: connector.from, to: connector.to, color: selectedColor }));
+  sendToServer({ type: 'ADD_CONNECTOR', id, from: connector.from, to: connector.to, color: selectedColor });
   connectorPendingFrom = null;
   connectorPreviewTo = null;
   draw();
@@ -1596,7 +1614,7 @@ function rotateSelection(angleDeg) {
     if (f) {
       const rot = ((f.rotation != null ? f.rotation : 0) + angleDeg) % 360;
       f.rotation = rot;
-      ws.send(JSON.stringify({ type: 'UPDATE_FRAME', id, rotation: rot }));
+      sendToServer({ type: 'UPDATE_FRAME', id, rotation: rot });
     }
   });
   selectedStrokeIds.forEach((strokeId) => {
@@ -1604,7 +1622,7 @@ function rotateSelection(angleDeg) {
     if (s && BOX_SHAPES.includes(s.shape)) {
       const rot = ((s.rotation != null ? s.rotation : 0) + angleDeg) % 360;
       s.rotation = rot;
-      ws.send(JSON.stringify({ type: 'SET_STROKE_ROTATION', strokeId, rotation: rot }));
+      sendToServer({ type: 'SET_STROKE_ROTATION', strokeId, rotation: rot });
     }
   });
   selectedStickyIds.forEach((id) => {
@@ -1612,7 +1630,7 @@ function rotateSelection(angleDeg) {
     if (s) {
       const rot = ((s.rotation != null ? s.rotation : 0) + angleDeg) % 360;
       s.rotation = rot;
-      ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id, rotation: rot }));
+      sendToServer({ type: 'UPDATE_STICKY', id, rotation: rot });
     }
   });
   selectedTextIds.forEach((id) => {
@@ -1620,7 +1638,7 @@ function rotateSelection(angleDeg) {
     if (el) {
       const rot = ((el.rotation != null ? el.rotation : 0) + angleDeg) % 360;
       el.rotation = rot;
-      ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id, rotation: rot }));
+      sendToServer({ type: 'UPDATE_TEXT_ELEMENT', id, rotation: rot });
     }
   });
   renderStickies();
@@ -1630,10 +1648,10 @@ function rotateSelection(angleDeg) {
 
 function deleteSelection() {
   if (!ws || ws.readyState !== 1) return;
-  selectedStickyIds.forEach((id) => ws.send(JSON.stringify({ type: 'DELETE_STICKY', id })));
-  if (selectedStrokeIds.size) ws.send(JSON.stringify({ type: 'DELETE_STROKES', strokeIds: [...selectedStrokeIds] }));
-  selectedTextIds.forEach((id) => ws.send(JSON.stringify({ type: 'DELETE_TEXT_ELEMENT', id })));
-  selectedFrameIds.forEach((id) => ws.send(JSON.stringify({ type: 'DELETE_FRAME', id })));
+  selectedStickyIds.forEach((id) => sendToServer({ type: 'DELETE_STICKY', id })));
+  if (selectedStrokeIds.size) sendToServer({ type: 'DELETE_STROKES', strokeIds: [...selectedStrokeIds] });
+  selectedTextIds.forEach((id) => sendToServer({ type: 'DELETE_TEXT_ELEMENT', id })));
+  selectedFrameIds.forEach((id) => sendToServer({ type: 'DELETE_FRAME', id })));
   clearSelection();
 }
 
@@ -1644,38 +1662,38 @@ function duplicateSelection() {
     const s = stickies.find((x) => x.id === id);
     if (s) {
       const newId = uuid();
-      ws.send(JSON.stringify({
+      sendToServer({
         type: 'ADD_STICKY', id: newId, x: s.x + dx, y: s.y + dy,
         width: s.width, height: s.height, text: s.text || '', color: s.color || '#fef9c3'
-      }));
+      });
     }
   });
   selectedStrokeIds.forEach((strokeId) => {
     const s = strokes.find((x) => x.strokeId === strokeId);
     if (s && s.points && s.points.length) {
       const newStrokeId = uuid();
-      const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
-      ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId: newStrokeId, points, color: s.color || '#e2e8f0', shape: s.shape }));
+      const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy });
+      sendToServer({ type: 'ADD_STROKE', strokeId: newStrokeId, points, color: s.color || '#e2e8f0', shape: s.shape });
     }
   });
   selectedTextIds.forEach((id) => {
     const t = textElements.find((x) => x.id === id);
     if (t) {
       const newId = uuid();
-      ws.send(JSON.stringify({
+      sendToServer({
         type: 'ADD_TEXT_ELEMENT', id: newId, x: t.x + dx, y: t.y + dy,
         text: t.text || '', color: t.color || '#e2e8f0', width: t.width, height: t.height
-      }));
+      });
     }
   });
   selectedFrameIds.forEach((id) => {
     const f = frames.find((x) => x.id === id);
     if (f) {
       const newId = uuid();
-      ws.send(JSON.stringify({
+      sendToServer({
         type: 'ADD_FRAME', id: newId, x: f.x + dx, y: f.y + dy,
         width: f.width, height: f.height, title: f.title || ''
-      }));
+      });
     }
   });
   clearSelection();
@@ -1717,29 +1735,29 @@ function pasteFromClipboard() {
   const dy = PASTE_OFFSET;
   clipboard.stickies.forEach((s) => {
     const newId = uuid();
-    ws.send(JSON.stringify({
+    sendToServer({
       type: 'ADD_STICKY', id: newId, x: s.x + dx, y: s.y + dy,
       width: s.width, height: s.height, text: s.text, color: s.color
-    }));
+    });
   });
   clipboard.strokes.forEach((s) => {
     const newStrokeId = uuid();
-    const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
-    ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId: newStrokeId, points, color: s.color, shape: s.shape }));
+    const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy });
+    sendToServer({ type: 'ADD_STROKE', strokeId: newStrokeId, points, color: s.color, shape: s.shape });
   });
   clipboard.texts.forEach((t) => {
     const newId = uuid();
-    ws.send(JSON.stringify({
+    sendToServer({
       type: 'ADD_TEXT_ELEMENT', id: newId, x: t.x + dx, y: t.y + dy,
       text: t.text, color: t.color, width: t.width, height: t.height
-    }));
+    });
   });
   clipboard.frames.forEach((f) => {
     const newId = uuid();
-    ws.send(JSON.stringify({
+    sendToServer({
       type: 'ADD_FRAME', id: newId, x: f.x + dx, y: f.y + dy,
       width: f.width, height: f.height, title: f.title
-    }));
+    });
   });
 }
 
@@ -1929,8 +1947,8 @@ canvas.addEventListener('pointerdown', (e) => {
       const content = div && div.querySelector('.text-content');
       if (content) content.focus();
     });
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({
+    if (true) {
+      sendToServer({
         type: 'ADD_TEXT_ELEMENT',
         id,
         x: textEl.x,
@@ -1939,7 +1957,7 @@ canvas.addEventListener('pointerdown', (e) => {
         color: selectedColor,
         width: TEXT_DEFAULT_W,
         height: TEXT_DEFAULT_H
-      }));
+      });
     }
     return;
   }
@@ -1983,7 +2001,7 @@ canvas.addEventListener('pointerdown', (e) => {
           if (stroke && stroke.points && stroke.points.length) {
             movingStrokeId = hit;
             moveStartWorld = { x: pt.x, y: pt.y };
-            initialStrokePoints = stroke.points.map((p) => ({ x: p.x, y: p.y }));
+            initialStrokePoints = stroke.points.map((p) => ({ x: p.x, y: p.y });
             e.target.setPointerCapture(e.pointerId);
           }
         } else {
@@ -2022,7 +2040,7 @@ canvas.addEventListener('pointerdown', (e) => {
     clampStickyToVisible(sticky);
     stickies.push(sticky);
     renderStickies();
-    ws.send(JSON.stringify({
+    sendToServer({
       type: 'ADD_STICKY',
       id,
       x: sticky.x,
@@ -2030,7 +2048,7 @@ canvas.addEventListener('pointerdown', (e) => {
       width: STICKY_DEFAULT_W,
       height: STICKY_DEFAULT_H,
       color: selectedColor
-    }));
+    });
     return;
   }
   if (tool === 'erase') {
@@ -2061,8 +2079,8 @@ canvas.addEventListener('pointerdown', (e) => {
         topSeq = s.seq;
       }
     });
-    if (topId && ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'SET_STROKE_COLOR', strokeId: topId, color: selectedColor }));
+    if (topId) {
+      sendToServer({ type: 'SET_STROKE_COLOR', strokeId: topId, color: selectedColor });
       const stroke = strokes.find((s) => s.strokeId === topId);
       if (stroke) stroke.color = selectedColor;
       draw();
@@ -2151,11 +2169,11 @@ canvas.addEventListener('pointermove', (e) => {
     currentPoints.push(pt);
     pending.set(currentStrokeId, [...currentPoints]);
   }
-  if (ws && ws.readyState === 1) {
+  if (true) {
     const now = Date.now();
     if (now - cursorThrottle >= CURSOR_THROTTLE_MS) {
       cursorThrottle = now;
-      ws.send(JSON.stringify({ type: 'CURSOR_MOVE', x: pt.x, y: pt.y }));
+      sendToServer({ type: 'CURSOR_MOVE', x: pt.x, y: pt.y });
     }
   }
   draw();
@@ -2170,10 +2188,10 @@ canvas.addEventListener('pointerup', (e) => {
   if (tool === 'move' && resizingStrokeId) {
     try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
     const stroke = strokes.find((s) => s.strokeId === resizingStrokeId);
-    if (stroke && stroke.points && ws && ws.readyState === 1) {
+    if (stroke && stroke.points) {
       const p1 = stroke.points[1];
       if (p1 && (p1.x !== initialShapePoint1.x || p1.y !== initialShapePoint1.y)) {
-        ws.send(JSON.stringify({ type: 'UPDATE_STROKE_POINTS', strokeId: resizingStrokeId, points: stroke.points }));
+        sendToServer({ type: 'UPDATE_STROKE_POINTS', strokeId: resizingStrokeId, points: stroke.points });
       }
     }
     resizingStrokeId = null;
@@ -2186,9 +2204,9 @@ canvas.addEventListener('pointerup', (e) => {
     const pt = toWorldCoords(e);
     const dx = pt.x - moveStartWorld.x;
     const dy = pt.y - moveStartWorld.y;
-    if ((dx !== 0 || dy !== 0) && strokes.some((s) => s.strokeId === movingStrokeId) && ws && ws.readyState === 1) {
+    if ((dx !== 0 || dy !== 0) && strokes.some((s) => s.strokeId === movingStrokeId)) {
       movedStrokeIdPendingEcho = movingStrokeId;
-      ws.send(JSON.stringify({ type: 'MOVE_STROKE', strokeId: movingStrokeId, dx, dy }));
+      sendToServer({ type: 'MOVE_STROKE', strokeId: movingStrokeId, dx, dy });
     }
     movingStrokeId = null;
     initialStrokePoints = null;
@@ -2221,8 +2239,8 @@ canvas.addEventListener('pointerup', (e) => {
   if (tool === 'move' && movingFrameId) {
     try { e.target.releasePointerCapture(e.pointerId); } catch (_) {}
     const f = frames.find((x) => x.id === movingFrameId);
-    if (f && ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'UPDATE_FRAME', frameId: movingFrameId, x: f.x, y: f.y, width: f.width, height: f.height }));
+    if (f) {
+      sendToServer({ type: 'UPDATE_FRAME', frameId: movingFrameId, x: f.x, y: f.y, width: f.width, height: f.height });
     }
     movingFrameId = null;
     draw();
@@ -2232,27 +2250,27 @@ canvas.addEventListener('pointerup', (e) => {
     erasing = false;
     const strokeIds = new Set(strokesToErase);
     const toSendStrokes = [...strokeIds].filter((id) => strokes.some((s) => s.strokeId === id));
-    if (toSendStrokes.length && ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'DELETE_STROKES', strokeIds: toSendStrokes }));
+    if (toSendStrokes.length) {
+      sendToServer({ type: 'DELETE_STROKES', strokeIds: toSendStrokes });
     }
     strokeIds.forEach((id) => {
       if (!strokes.some((s) => s.strokeId === id)) pending.delete(id);
     });
     strokesToErase.clear();
     stickiesToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_STICKY', id }));
+      sendToServer({ type: 'DELETE_STICKY', id });
     });
     stickiesToErase.clear();
     textsToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_TEXT_ELEMENT', id }));
+      sendToServer({ type: 'DELETE_TEXT_ELEMENT', id });
     });
     textsToErase.clear();
     framesToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_FRAME', id }));
+      sendToServer({ type: 'DELETE_FRAME', id });
     });
     framesToErase.clear();
     connectorsToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_CONNECTOR', id }));
+      sendToServer({ type: 'DELETE_CONNECTOR', id });
     });
     connectorsToErase.clear();
     draw();
@@ -2266,9 +2284,9 @@ canvas.addEventListener('pointerup', (e) => {
     const y = Math.min(pendingFrame.p1.y, pendingFrame.p2.y);
     const w = Math.max(20, Math.abs(pendingFrame.p2.x - pendingFrame.p1.x));
     const h = Math.max(20, Math.abs(pendingFrame.p2.y - pendingFrame.p1.y));
-    if (ws && ws.readyState === 1) {
+    if (true) {
       const frameId = uuid();
-      ws.send(JSON.stringify({ type: 'ADD_FRAME', id: frameId, x, y, width: w, height: h }));
+      sendToServer({ type: 'ADD_FRAME', id: frameId, x, y, width: w, height: h });
     }
     pendingFrame = null;
     draw();
@@ -2278,8 +2296,8 @@ canvas.addEventListener('pointerup', (e) => {
     const pts = [{ x: pendingShape.p1.x, y: pendingShape.p1.y }, { x: pendingShape.p2.x, y: pendingShape.p2.y }];
     clampShapeToVisible(pts, pendingShape.type);
     const strokeId = uuid();
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId, points: pts, color: selectedColor, shape: pendingShape.type }));
+    if (true) {
+      sendToServer({ type: 'ADD_STROKE', strokeId, points: pts, color: selectedColor, shape: pendingShape.type });
     }
     pendingShape = null;
     draw();
@@ -2288,9 +2306,9 @@ canvas.addEventListener('pointerup', (e) => {
   if (!drawing || !currentStrokeId) return;
   drawing = false;
   currentPoints.push(toWorldCoords(e));
-  if (ws && ws.readyState === 1 && currentPoints.length >= 2) {
+  if (currentPoints.length >= 2) {
     clampShapeToVisible(currentPoints, undefined);
-    ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId: currentStrokeId, points: currentPoints, color: selectedColor }));
+    sendToServer({ type: 'ADD_STROKE', strokeId: currentStrokeId, points: currentPoints, color: selectedColor });
   }
   currentStrokeId = null;
   currentPoints = [];
@@ -2316,32 +2334,32 @@ canvas.addEventListener('pointerleave', () => {
     panning = false;
     updateCursor();
   }
-  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'CURSOR_LEFT' }));
+  sendToServer({ type: 'CURSOR_LEFT' });
   if (tool === 'erase' && erasing) {
     erasing = false;
     const strokeIds = new Set(strokesToErase);
     const toSendStrokes = [...strokeIds].filter((id) => strokes.some((s) => s.strokeId === id));
-    if (toSendStrokes.length && ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'DELETE_STROKES', strokeIds: toSendStrokes }));
+    if (toSendStrokes.length) {
+      sendToServer({ type: 'DELETE_STROKES', strokeIds: toSendStrokes });
     }
     strokeIds.forEach((id) => {
       if (!strokes.some((s) => s.strokeId === id)) pending.delete(id);
     });
     strokesToErase.clear();
     stickiesToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_STICKY', id }));
+      sendToServer({ type: 'DELETE_STICKY', id });
     });
     stickiesToErase.clear();
     textsToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_TEXT_ELEMENT', id }));
+      sendToServer({ type: 'DELETE_TEXT_ELEMENT', id });
     });
     textsToErase.clear();
     framesToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_FRAME', id }));
+      sendToServer({ type: 'DELETE_FRAME', id });
     });
     framesToErase.clear();
     connectorsToErase.forEach((id) => {
-      if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'DELETE_CONNECTOR', id }));
+      sendToServer({ type: 'DELETE_CONNECTOR', id });
     });
     connectorsToErase.clear();
     draw();
@@ -2352,8 +2370,8 @@ canvas.addEventListener('pointerleave', () => {
     const pts = [{ x: pendingShape.p1.x, y: pendingShape.p1.y }, { x: pendingShape.p2.x, y: pendingShape.p2.y }];
     clampShapeToVisible(pts, pendingShape.type);
     const strokeId = uuid();
-    if (ws && ws.readyState === 1) {
-      ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId, points: pts, color: selectedColor, shape: pendingShape.type }));
+    if (true) {
+      sendToServer({ type: 'ADD_STROKE', strokeId, points: pts, color: selectedColor, shape: pendingShape.type });
     }
     pendingShape = null;
     draw();
@@ -2364,8 +2382,8 @@ canvas.addEventListener('pointerleave', () => {
     return;
   }
   drawing = false;
-  if (currentPoints.length >= 2 && ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'ADD_STROKE', strokeId: currentStrokeId, points: currentPoints, color: selectedColor }));
+  if (currentPoints.length >= 2) {
+    sendToServer({ type: 'ADD_STROKE', strokeId: currentStrokeId, points: currentPoints, color: selectedColor });
   } else {
     pending.delete(currentStrokeId);
   }
@@ -2378,15 +2396,15 @@ canvas.addEventListener('pointerleave', () => {
 function createStickyNote(text, x, y, color) {
   if (typeof x !== 'number' || typeof y !== 'number') return null;
   const id = uuid();
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({
+  if (true) {
+    sendToServer({
       type: 'ADD_STICKY',
       id,
       x,
       y,
       text: typeof text === 'string' ? text : '',
       color: typeof color === 'string' ? color : '#fef9c3'
-    }));
+    });
   }
   return id;
 }
@@ -2398,14 +2416,14 @@ function createShape(type, x, y, width, height, color) {
   const h = typeof height === 'number' && height > 0 ? height : 80;
   const strokeId = uuid();
   const points = [{ x, y }, { x: x + w, y: y + h }];
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({
+  if (true) {
+    sendToServer({
       type: 'ADD_STROKE',
       strokeId,
       points,
       color: typeof color === 'string' ? color : '#e2e8f0',
       shape
-    }));
+    });
   }
   return strokeId;
 }
@@ -2415,8 +2433,8 @@ function createFrame(title, x, y, width, height) {
   const id = uuid();
   const w = typeof width === 'number' && width >= 60 ? width : FRAME_DEFAULT_W;
   const h = typeof height === 'number' && height >= 40 ? height : FRAME_DEFAULT_H;
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({
+  if (true) {
+    sendToServer({
       type: 'ADD_FRAME',
       id,
       x,
@@ -2424,7 +2442,7 @@ function createFrame(title, x, y, width, height) {
       width: w,
       height: h,
       title: typeof title === 'string' ? title : ''
-    }));
+    });
   }
   return id;
 }
@@ -2443,8 +2461,8 @@ function createConnector(fromId, toId, style) {
   if (!from || !to) return null;
   const id = uuid();
   const color = typeof style === 'string' ? style : '#94a3b8';
-  if (ws && ws.readyState === 1) {
-    ws.send(JSON.stringify({ type: 'ADD_CONNECTOR', id, from, to, color }));
+  if (true) {
+    sendToServer({ type: 'ADD_CONNECTOR', id, from, to, color });
   }
   return id;
 }
@@ -2453,26 +2471,26 @@ function moveObject(objectId, x, y) {
   if (typeof x !== 'number' || typeof y !== 'number') return false;
   const s = stickies.find((o) => o.id === objectId);
   if (s) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY_POSITION', id: objectId, x, y }));
+    sendToServer({ type: 'UPDATE_STICKY_POSITION', id: objectId, x, y });
     return true;
   }
   const t = textElements.find((o) => o.id === objectId);
   if (t) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_POSITION', id: objectId, x, y }));
+    sendToServer({ type: 'UPDATE_TEXT_POSITION', id: objectId, x, y });
     return true;
   }
   const f = frames.find((o) => o.id === objectId);
   if (f) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_FRAME', id: objectId, x, y, width: f.width, height: f.height }));
+    sendToServer({ type: 'UPDATE_FRAME', id: objectId, x, y, width: f.width, height: f.height });
     return true;
   }
   const stroke = strokes.find((o) => o.strokeId === objectId);
   if (stroke && stroke.points && stroke.points.length) {
     const center = strokeCenterWorld(stroke);
-    if (center && ws && ws.readyState === 1) {
+    if (center) {
       const dx = x - center.x;
       const dy = y - center.y;
-      ws.send(JSON.stringify({ type: 'MOVE_STROKE', strokeId: objectId, dx, dy }));
+      sendToServer({ type: 'MOVE_STROKE', strokeId: objectId, dx, dy });
     }
     return true;
   }
@@ -2483,24 +2501,24 @@ function resizeObject(objectId, width, height) {
   if (typeof width !== 'number' || typeof height !== 'number') return false;
   const s = stickies.find((o) => o.id === objectId);
   if (s) {
-    if (width >= 40 && height >= 30 && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: objectId, width, height }));
+    if (width >= 40 && height >= 30) sendToServer({ type: 'UPDATE_STICKY', id: objectId, width, height });
     return true;
   }
   const t = textElements.find((o) => o.id === objectId);
   if (t) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id: objectId, width, height }));
+    sendToServer({ type: 'UPDATE_TEXT_ELEMENT', id: objectId, width, height });
     return true;
   }
   const f = frames.find((o) => o.id === objectId);
   if (f) {
-    if (width >= 60 && height >= 40 && ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_FRAME', id: objectId, width, height }));
+    if (width >= 60 && height >= 40) sendToServer({ type: 'UPDATE_FRAME', id: objectId, width, height });
     return true;
   }
   const stroke = strokes.find((o) => o.strokeId === objectId);
   if (stroke && BOX_SHAPES.includes(stroke.shape) && stroke.points && stroke.points.length >= 2) {
     const p0 = stroke.points[0];
     const points = [p0, { x: p0.x + width, y: p0.y + height }];
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STROKE_POINTS', strokeId: objectId, points }));
+    sendToServer({ type: 'UPDATE_STROKE_POINTS', strokeId: objectId, points });
     return true;
   }
   return false;
@@ -2510,12 +2528,12 @@ function updateText(objectId, newText) {
   const str = typeof newText === 'string' ? newText : '';
   const s = stickies.find((o) => o.id === objectId);
   if (s) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: objectId, text: str }));
+    sendToServer({ type: 'UPDATE_STICKY', id: objectId, text: str });
     return true;
   }
   const t = textElements.find((o) => o.id === objectId);
   if (t) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id: objectId, text: str }));
+    sendToServer({ type: 'UPDATE_TEXT_ELEMENT', id: objectId, text: str });
     return true;
   }
   return false;
@@ -2525,22 +2543,22 @@ function changeColor(objectId, color) {
   if (typeof color !== 'string') return false;
   const s = stickies.find((o) => o.id === objectId);
   if (s) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id: objectId, color }));
+    sendToServer({ type: 'UPDATE_STICKY', id: objectId, color });
     return true;
   }
   const t = textElements.find((o) => o.id === objectId);
   if (t) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id: objectId, color }));
+    sendToServer({ type: 'UPDATE_TEXT_ELEMENT', id: objectId, color });
     return true;
   }
   const stroke = strokes.find((o) => o.strokeId === objectId);
   if (stroke) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'SET_STROKE_COLOR', strokeId: objectId, color }));
+    sendToServer({ type: 'SET_STROKE_COLOR', strokeId: objectId, color });
     return true;
   }
   const c = connectors.find((o) => o.id === objectId);
   if (c) {
-    if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_CONNECTOR', id: objectId, color }));
+    sendToServer({ type: 'UPDATE_CONNECTOR', id: objectId, color });
     return true;
   }
   return false;
@@ -2594,7 +2612,7 @@ window.addEventListener('resize', () => {
     if (!text) return;
     runBtn.disabled = true;
     setStatus('Running…', '');
-    window.dispatchEvent(new CustomEvent('ai-command-run', { detail: { text } }));
+    window.dispatchEvent(new CustomEvent('ai-command-run', { detail: { text } });
     if (typeof window.onAiCommandRun === 'function') window.onAiCommandRun(text);
     try {
       const body = { command: text };
@@ -2609,7 +2627,7 @@ window.addEventListener('resize', () => {
         },
         120000
       );
-      const data = await res.json().catch(() => ({}));
+      const data = await res.json().catch(() => ({});
       if (!res.ok) {
         setStatus(res.status === 504 ? 'Request timed out' : (data.error || 'Request failed'), 'error');
         return;
