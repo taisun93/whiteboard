@@ -328,7 +328,7 @@ function connect(boardId) {
     } else if (msg.type === 'STROKE_POINTS_UPDATED') {
       const stroke = strokes.find((s) => s.strokeId === msg.strokeId);
       if (stroke && Array.isArray(msg.points)) {
-        stroke.points = msg.points.map((p) => ({ x: p.x, y: p.y });
+        stroke.points = msg.points.map((p) => ({ x: p.x, y: p.y }));
         draw();
       }
     } else if (msg.type === 'STROKE_ROTATION_CHANGED') {
@@ -1606,7 +1606,6 @@ function addToSelection(type, id) {
 const PASTE_OFFSET = 30;
 
 function rotateSelection(angleDeg) {
-  if (!ws || ws.readyState !== 1) return;
   const hasSelection = selectedStickyIds.size || selectedStrokeIds.size || selectedTextIds.size || selectedFrameIds.size;
   if (!hasSelection) return;
   selectedFrameIds.forEach((id) => {
@@ -1647,16 +1646,14 @@ function rotateSelection(angleDeg) {
 }
 
 function deleteSelection() {
-  if (!ws || ws.readyState !== 1) return;
-  selectedStickyIds.forEach((id) => sendToServer({ type: 'DELETE_STICKY', id })));
+  selectedStickyIds.forEach((id) => sendToServer({ type: 'DELETE_STICKY', id }));
   if (selectedStrokeIds.size) sendToServer({ type: 'DELETE_STROKES', strokeIds: [...selectedStrokeIds] });
-  selectedTextIds.forEach((id) => sendToServer({ type: 'DELETE_TEXT_ELEMENT', id })));
-  selectedFrameIds.forEach((id) => sendToServer({ type: 'DELETE_FRAME', id })));
+  selectedTextIds.forEach((id) => sendToServer({ type: 'DELETE_TEXT_ELEMENT', id }));
+  selectedFrameIds.forEach((id) => sendToServer({ type: 'DELETE_FRAME', id }));
   clearSelection();
 }
 
 function duplicateSelection() {
-  if (!ws || ws.readyState !== 1) return;
   const dx = PASTE_OFFSET, dy = PASTE_OFFSET;
   selectedStickyIds.forEach((id) => {
     const s = stickies.find((x) => x.id === id);
@@ -1672,7 +1669,7 @@ function duplicateSelection() {
     const s = strokes.find((x) => x.strokeId === strokeId);
     if (s && s.points && s.points.length) {
       const newStrokeId = uuid();
-      const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy });
+const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
       sendToServer({ type: 'ADD_STROKE', strokeId: newStrokeId, points, color: s.color || '#e2e8f0', shape: s.shape });
     }
   });
@@ -1727,7 +1724,6 @@ function copySelection() {
 
 function pasteFromClipboard() {
   if (!clipboard || (!clipboard.stickies.length && !clipboard.strokes.length && !clipboard.texts.length && !clipboard.frames.length)) return;
-  if (!ws || ws.readyState !== 1) return;
   const b = getVisibleWorldBounds();
   const cx = (b.minX + b.maxX) / 2;
   const cy = (b.minY + b.maxY) / 2;
@@ -1742,7 +1738,7 @@ function pasteFromClipboard() {
   });
   clipboard.strokes.forEach((s) => {
     const newStrokeId = uuid();
-    const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy });
+    const points = s.points.map((p) => ({ x: p.x + dx, y: p.y + dy }));
     sendToServer({ type: 'ADD_STROKE', strokeId: newStrokeId, points, color: s.color, shape: s.shape });
   });
   clipboard.texts.forEach((t) => {
@@ -1961,7 +1957,6 @@ canvas.addEventListener('pointerdown', (e) => {
     }
     return;
   }
-  if (!ws || ws.readyState !== 1) return;
   if (tool === 'marquee') {
     selectionRectStart = { x: pt.x, y: pt.y };
     selectionRectCurrent = { x: pt.x, y: pt.y };
@@ -2001,7 +1996,7 @@ canvas.addEventListener('pointerdown', (e) => {
           if (stroke && stroke.points && stroke.points.length) {
             movingStrokeId = hit;
             moveStartWorld = { x: pt.x, y: pt.y };
-            initialStrokePoints = stroke.points.map((p) => ({ x: p.x, y: p.y });
+            initialStrokePoints = stroke.points.map((p) => ({ x: p.x, y: p.y }));
             e.target.setPointerCapture(e.pointerId);
           }
         } else {
@@ -2612,7 +2607,7 @@ window.addEventListener('resize', () => {
     if (!text) return;
     runBtn.disabled = true;
     setStatus('Running…', '');
-    window.dispatchEvent(new CustomEvent('ai-command-run', { detail: { text } });
+    window.dispatchEvent(new CustomEvent('ai-command-run', { detail: { text } }));
     if (typeof window.onAiCommandRun === 'function') window.onAiCommandRun(text);
     try {
       const body = { command: text };
@@ -2627,7 +2622,7 @@ window.addEventListener('resize', () => {
         },
         120000
       );
-      const data = await res.json().catch(() => ({});
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         setStatus(res.status === 504 ? 'Request timed out' : (data.error || 'Request failed'), 'error');
         return;
