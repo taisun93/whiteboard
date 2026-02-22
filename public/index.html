@@ -6,20 +6,22 @@
   <title>Whiteboard Sync</title>
   <style>
     * { box-sizing: border-box; }
-    html, body { margin: 0; height: 100vh; overflow: hidden; }
+    html, body { margin: 0; height: 100vh; overflow: hidden; scrollbar-width: none; }
+    body::-webkit-scrollbar, #app::-webkit-scrollbar, #main::-webkit-scrollbar, .ai-panel-body::-webkit-scrollbar { display: none; }
     body { background: #1a1a2e; color: #eee; font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; }
-    #toolbar { padding: 8px 12px; background: #16213e; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
+    #toolbar { padding: 8px 12px 8px 60px; background: #16213e; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
     #status { color: #888; }
     #status.connected { color: #4ade80; }
     #app-title { font-weight: 600; font-size: 15px; color: #e2e8f0; letter-spacing: 0.02em; }
     #main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+    #board-wrap { display: flex; flex-direction: row; flex: 1; min-height: 0; min-width: 0; overflow: hidden; }
     #tool-menu {
-      position: absolute; left: 12px; top: 12px;
-      width: 48px; z-index: 20;
+      flex-shrink: 0; width: 48px; margin: 12px 0 12px 12px; align-self: flex-start;
       display: flex; flex-direction: column; align-items: center; gap: 0;
       padding: 8px 0;
       background: #f8fafc; border-radius: 14px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
+      z-index: 20;
     }
     #tool-menu .palette-group { display: flex; flex-direction: column; align-items: center; gap: 2px; }
     #tool-menu .palette-sep { width: 28px; height: 1px; background: #e2e8f0; margin: 6px 0; border: none; }
@@ -44,8 +46,7 @@
     #tool-menu .color-hex { width: 40px; padding: 4px 6px; font-size: 10px; font-family: monospace; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; color: #334155; text-align: center; }
     #tool-menu .color-hex:focus { outline: none; border-color: #3b82f6; }
     #tool-menu .color-hex::placeholder { color: #94a3b8; }
-    #board-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; overflow: hidden; }
-    #board-inner { flex: 1; position: relative; min-height: 0; display: flex; overflow: hidden; }
+    #board-inner { flex: 1; position: relative; min-height: 0; min-width: 0; display: flex; overflow: hidden; }
     #board-inner canvas { display: block; cursor: crosshair; background: #0f0f1a; flex: 1; width: 100%; height: 100%; object-fit: contain; }
     #board-inner.hand-tool canvas { cursor: grab; }
     #board-inner.hand-tool canvas:active { cursor: grabbing; }
@@ -65,11 +66,11 @@
     .sticky-note .sticky-header { display: flex; align-items: center; justify-content: flex-end; padding: 2px 4px; background: rgba(0,0,0,0.06); flex-shrink: 0; }
     .sticky-note .sticky-delete { background: none; border: none; cursor: pointer; padding: 2px 6px; font-size: 14px; line-height: 1; color: #78716c; border-radius: 4px; }
     .sticky-note .sticky-delete:hover { background: rgba(0,0,0,0.1); color: #1c1917; }
-    .sticky-note .sticky-body { flex: 1; padding: 6px 8px; font-size: 13px; line-height: 1.4; resize: none; border: none; background: transparent; color: inherit; font-family: inherit; outline: none; overflow: auto; }
+    .sticky-note .sticky-body { flex: 1; padding: 6px 8px; font-size: 13px; line-height: 1.4; resize: none; border: none; background: transparent; color: inherit; font-family: inherit; outline: none; overflow: hidden; }
     .sticky-note .sticky-resize-handle { position: absolute; right: 0; bottom: 0; width: 14px; height: 14px; cursor: se-resize; background: linear-gradient(135deg, transparent 0%, transparent 45%, rgba(0,0,0,0.15) 45%, rgba(0,0,0,0.15) 100%); border-radius: 0 0 4px 0; flex-shrink: 0; }
     .sticky-note.selected { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.9); }
     .text-element.selected { box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.9); }
-    #sidebar { width: 180px; background: #16213e; border-left: 1px solid #1e293b; padding: 12px; display: flex; flex-direction: column; flex-shrink: 0; }
+    #sidebar { width: 180px; background: #16213e; border-left: 1px solid #1e293b; padding: 12px; display: flex; flex-direction: column; flex-shrink: 0; overflow: hidden; }
     #sidebar h2 { margin: 0 0 10px 0; font-size: 12px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
     #users-list { display: flex; flex-direction: column; gap: 6px; }
     #users-list span { background: #1e293b; padding: 6px 10px; border-radius: 4px; font-size: 13px; color: #e2e8f0; }
@@ -101,7 +102,7 @@
       width: 100%; padding: 10px 12px; margin-bottom: 10px;
       border: 1px solid #1e293b; border-radius: 6px;
       background: #0f0f1a; color: #e2e8f0; font-size: 14px;
-      font-family: inherit; resize: vertical; min-height: 72px;
+      font-family: inherit; resize: none; min-height: 72px; overflow: hidden;
       box-sizing: border-box;
     }
     .ai-command-input::placeholder { color: #64748b; }
