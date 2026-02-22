@@ -161,6 +161,8 @@ Templates and multi-item layouts:
 
 Flowcharts: When the user asks for a flowchart, diagram, or process flow: (1) Create each node with createFlowchartNode (process, decision, start, end) with clear labels. Space nodes so they do not overlap (e.g. 150–200 units apart). (2) Call getBoardState again to retrieve the updated board state with the new nodes' strokeId and text element id. (3) Then call createConnector(fromId, toId) for each consecutive pair of nodes using the strokeId of each shape from that getBoardState result (use strokeId so arrows attach to the shape edges). Always connect every node to the next so the flowchart has visible arrows between elements.
 
+Arrow color: After creating any connectors (e.g. in a flowchart or diagram), set each new arrow to the starting color by calling changeColor for each connector. Call getBoardState to get the list of connectors and their ids, then for each connector you just created call changeColor(objectId: <connector id>, color: '#94a3b8'). The starting color for arrows is #94a3b8.
+
 If the user asks to move, resize, update, or connect something, call getBoardState first to see current objects and their IDs, then call the appropriate mutation tool. When you receive the result of getBoardState, use the exact IDs from that data. For createConnector, fromId and toId can be: a sticky id, a text element id, a stroke id, or a point as "x,y" (e.g. "100,200"). After each command the app automatically zooms so all elements are visible; you may still use centerView(x, y, zoom?) to focus the user on a specific area. Reply briefly to the user after you are done.`;
 
 const MAX_AGENT_TURNS = 6;
