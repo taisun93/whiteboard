@@ -929,6 +929,7 @@ app.post('/api/ai/command', async (req, res) => {
   if (!session) {
     return res.status(401).json({ error: 'Not authenticated', hint: 'Session expired or invalid. Sign in again.' });
   }
+  session = await ensureSessionUserId(sessionId, session);
   const { command, boardId } = req.body || {};
   if (typeof command !== 'string' || !command.trim()) {
     return res.status(400).json({ error: 'Missing or empty command' });
@@ -1013,17 +1014,6 @@ app.post('/api/ai/command', async (req, res) => {
     res.status(isTimeout ? 504 : 500).json({ error: err.message || 'AI command failed' });
   }
 });
-
-function broadcastUsers() {
-  const userList = Array.from(wss.clients)
-    .filter((c) => c.readyState === 1)
-    .map((c) => ({ clientId: c.clientId, username: c.username || 'anonymous' }))
-    .sort((a, b) => (a.username || '').localeCompare(b.username || ''));
-  const payload = JSON.stringify({ type: 'USERS', users: userList });
-  wss.clients.forEach((c) => {
-    if (c.readyState === 1) c.send(payload);
-  });
-}
 
 async function main() {
   await db.init();

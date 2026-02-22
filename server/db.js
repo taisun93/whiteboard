@@ -13,11 +13,20 @@ async function init() {
     console.warn('DATABASE_URL not set; using in-memory sessions and no board persistence.');
     return;
   }
-  pool = new Pool({
-    connectionString: DATABASE_URL,
-    ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
-  });
+  try {
+    pool = new Pool({
+      connectionString: DATABASE_URL,
+      ssl: DATABASE_URL.includes('localhost') ? false : { rejectUnauthorized: false }
+    });
+    await pool.query('SELECT 1');
+  } catch (err) {
+    console.error('PostgreSQL connection failed:', err.message || err);
+    console.warn('Falling back to in-memory sessions and no board persistence.');
+    pool = null;
+    return;
+  }
 
+  try {
   await pool.query(`
     CREATE TABLE IF NOT EXISTS users (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -68,6 +77,11 @@ async function init() {
     await pool.query('ALTER TABLE sessions ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL');
   } catch (e) {
     if (e.code !== '42701') throw e;
+  }
+  } catch (err) {
+    console.error('PostgreSQL schema setup failed:', err.message || err);
+    pool = null;
+    return;
   }
 
   console.log('PostgreSQL connected.');
