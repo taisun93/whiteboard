@@ -205,6 +205,16 @@ async function createWhiteboard(userId, name) {
   }
 }
 
+/** Ensure a whiteboard row exists with this id (for shareable links). Creates with name 'Untitled' if missing. */
+async function ensureWhiteboardExists(whiteboardId) {
+  if (!pool || !whiteboardId) return false;
+  await pool.query(
+    `INSERT INTO whiteboards (id, name) VALUES ($1, 'Untitled') ON CONFLICT (id) DO NOTHING`,
+    [whiteboardId]
+  );
+  return true;
+}
+
 async function isUserInWhiteboard(userId, whiteboardId) {
   if (!pool || !userId || !whiteboardId) return false;
   const r = await pool.query(
@@ -278,6 +288,7 @@ module.exports = {
   getOrCreateUserByGoogleId,
   listWhiteboardsForUser,
   createWhiteboard,
+  ensureWhiteboardExists,
   isUserInWhiteboard,
   addUserToWhiteboard,
   loadBoardState,

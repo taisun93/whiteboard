@@ -539,9 +539,11 @@ wss.on('connection', async (ws, req) => {
     let allowed = await db.isUserInWhiteboard(session.userId, boardId);
     if (!allowed) {
       try {
+        await db.ensureWhiteboardExists(boardId);
         await db.addUserToWhiteboard(session.userId, boardId);
         allowed = true;
       } catch (e) {
+        console.error('WebSocket add user to board failed:', e.message || e);
         ws.close(4003, 'not in whiteboard');
         return;
       }

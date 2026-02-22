@@ -220,7 +220,12 @@ function connect(boardId, fromReconnect) {
       currentBoardId = null;
       currentBoardName = null;
       updateBoardTitle();
-      if (multiBoardMode && typeof showBoardPicker === 'function') showBoardPicker();
+      if (multiBoardMode && typeof showBoardPicker === 'function') {
+        fetchWithTimeout('/api/whiteboards', { credentials: 'include' }, 15000)
+          .then((r) => r.json())
+          .then((wb) => showBoardPicker(wb.whiteboards || []))
+          .catch(() => showBoardPicker([]));
+      }
     } else {
       const delay = Math.min(2000 * Math.pow(2, (window._reconnectAttempts || 0)), 30000);
       window._reconnectAttempts = (window._reconnectAttempts || 0) + 1;
