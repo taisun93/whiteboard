@@ -831,10 +831,14 @@ wss.on('connection', async (ws, req) => {
   });
 
   ws.on('close', () => {
-    const cursors = cursorsByBoard.get(ws.boardId);
-    if (cursors) cursors.delete(clientId);
-    broadcastToBoard(ws.boardId, { type: 'CURSOR_LEFT', clientId });
-    broadcastUsers(ws.boardId);
+    const cid = ws.clientId;
+    const bid = ws.boardId;
+    if (bid && cid) {
+      const cursors = cursorsByBoard.get(bid);
+      if (cursors) cursors.delete(cid);
+      broadcastToBoard(bid, { type: 'CURSOR_LEFT', clientId: cid });
+      broadcastUsers(bid);
+    }
   });
 });
 
