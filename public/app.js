@@ -875,7 +875,7 @@ function draw() {
     if (!a || !b) return;
     const ca = worldToCanvas(a.x, a.y);
     const cb = worldToCanvas(b.x, b.y);
-    const color = c.color || '#94a3b8';
+    const color = c.color || selectedColor;
     const lineEnd = lineEndBeforeArrowhead(ca.x, ca.y, cb.x, cb.y);
     ctx.strokeStyle = color;
     ctx.beginPath();
