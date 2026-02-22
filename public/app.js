@@ -2744,7 +2744,13 @@ function showBoardPicker(list) {
   if (switchBoardBtn) {
     switchBoardBtn.addEventListener('click', () => {
       if (!multiBoardMode) return;
-      if (ws) { ws.close(); ws = null; }
+      if (ws) {
+        ws.onmessage = null;
+        ws.onclose = null;
+        ws.onerror = null;
+        ws.close();
+        ws = null;
+      }
       currentBoardId = null;
       currentBoardName = null;
       updateBoardTitle();
