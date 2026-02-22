@@ -2398,20 +2398,22 @@ function showBoardPicker(list) {
       credentials: 'include',
       body: JSON.stringify({ name })
     })
-      .then((r) => r.json())
+      .then((r) => {
+        if (!r.ok) throw new Error('Create failed');
+        return r.json();
+      })
       .then((data) => {
-        if (data.id) {
-          currentBoardId = data.id;
-          try { sessionStorage.setItem('whiteboardId', data.id); } catch (_) {}
-          picker.classList.add('hidden');
-          const sw = document.getElementById('switch-board-btn');
-          if (sw) sw.classList.remove('hidden');
-          connect(data.id);
-          draw();
-          applyToolUI();
-          renderStickies();
-          renderTextElements();
-        }
+        if (!data || !data.id) return;
+        currentBoardId = data.id;
+        try { sessionStorage.setItem('whiteboardId', data.id); } catch (_) {}
+        picker.classList.add('hidden');
+        const sw = document.getElementById('switch-board-btn');
+        if (sw) sw.classList.remove('hidden');
+        connect(data.id);
+        draw();
+        applyToolUI();
+        renderStickies();
+        renderTextElements();
       })
       .catch(() => {});
   }
