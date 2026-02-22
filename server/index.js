@@ -355,6 +355,12 @@ function parseBoardIdFromUrl(url) {
 }
 
 wss.on('connection', async (ws, req) => {
+  // Mark alive immediately so heartbeat doesn't kill the connection while we do DB work (getSession, ensureBoardState, etc.)
+  ws.isAlive = true;
+  ws.on('error', (err) => console.error('WebSocket error:', err.message || err));
+  ws.on('pong', () => { ws.isAlive = true; });
+
+  try {
   const cookies = parseCookie(req.headers.cookie);
   const sessionId = cookies.session;
   let session = sessionId ? await db.getSession(sessionId) : null;
@@ -388,10 +394,6 @@ wss.on('connection', async (ws, req) => {
 
   if (!cursorsByBoard.has(boardId)) cursorsByBoard.set(boardId, new Map());
 
-  ws.isAlive = true;
-  ws.on('error', (err) => console.error('WebSocket error:', err.message || err));
-  ws.on('pong', () => { ws.isAlive = true; });
-
   ws.send(JSON.stringify({ type: 'ME', clientId, username: ws.username }));
   const state = getBoardState(boardId);
   ws.send(JSON.stringify({ type: 'STATE', strokes: state.strokes, stickies: state.stickies, textElements: state.textElements, connectors: state.connectors, frames: state.frames }));
@@ -401,6 +403,12 @@ wss.on('connection', async (ws, req) => {
   ws.send(JSON.stringify({ type: 'CURSORS', cursors: cursorList }));
 
   broadcastUsers(boardId);
+
+  } catch (err) {
+    console.error('WebSocket connection setup error:', err.message || err);
+    try { ws.close(1011, 'Server error during setup'); } catch (_) {}
+    return;
+  }
 
   ws.on('message', (raw) => {
     let msg;
