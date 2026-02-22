@@ -195,6 +195,7 @@ app.post('/api/logout', async (req, res) => {
 const SESSION_CACHE_TTL_MS = 60000;
 const sessionCache = new Map();
 const SESSION_KEY_PREFIX = 'session:';
+const BOARD_STATE_KEY_PREFIX = 'board:';
 
 async function getSessionCached(sessionId) {
   if (!sessionId) return null;
@@ -300,41 +301,59 @@ function getBoardState(boardId) {
   return defaultState;
 }
 
-/** Sync: returns in-memory state (empty if first time). Kicks off background load from DB; when done, updates memory and broadcasts STATE so all clients on that board get it. */
+function applyLoadedState(s, loaded) {
+  s.strokes.length = 0;
+  (loaded.strokes || []).forEach((x) => s.strokes.push(x));
+  s.stickies.length = 0;
+  (loaded.stickies || []).forEach((x) => s.stickies.push(x));
+  s.textElements.length = 0;
+  (loaded.textElements || []).forEach((x) => s.textElements.push(x));
+  s.connectors.length = 0;
+  (loaded.connectors || []).forEach((x) => s.connectors.push(x));
+  s.frames.length = 0;
+  (loaded.frames || []).forEach((x) => s.frames.push(x));
+  s.nextSeq = loaded.nextSeq != null ? loaded.nextSeq : 0;
+}
+
+/** Try Redis first (if available), then Postgres. Apply loaded state and broadcast; on DB load also write to Redis when available. */
+async function loadBoardStateBackground(boardId, state) {
+  if (dirtyBoards.has(boardId)) return;
+  const s = boardStates.get(boardId);
+  if (!s || s !== state) return;
+  let loaded = null;
+  if (redis.isAvailable()) {
+    loaded = await redis.get(BOARD_STATE_KEY_PREFIX + boardId);
+  }
+  if (!loaded && db.hasDatabase()) {
+    loaded = await db.loadBoardState(boardId);
+    if (loaded && redis.isAvailable()) {
+      await redis.set(BOARD_STATE_KEY_PREFIX + boardId, loaded, 0);
+    }
+  }
+  if (!loaded) return;
+  applyLoadedState(s, loaded);
+  broadcastToBoard(boardId, {
+    type: 'STATE',
+    strokes: s.strokes,
+    stickies: s.stickies,
+    textElements: s.textElements,
+    connectors: s.connectors,
+    frames: s.frames
+  });
+  broadcastToBoard(boardId, { type: 'SEQ', nextSeq: s.nextSeq });
+}
+
+/** Sync: returns in-memory state (empty if first time). Kicks off background load from Redis and/or DB; when done, updates memory and broadcasts STATE. */
 function ensureBoardState(boardId) {
   if (!boardId) return defaultState;
   if (boardStates.has(boardId)) return boardStates.get(boardId);
   const state = emptyBoardState();
   boardStates.set(boardId, state);
-  if (db.hasDatabase()) {
+  if (db.hasDatabase() || redis.isAvailable()) {
     setImmediate(() => {
-      db.loadBoardState(boardId)
-        .then((loaded) => {
-          if (!loaded || dirtyBoards.has(boardId)) return;
-          const s = boardStates.get(boardId);
-          if (!s || s !== state) return;
-          s.strokes.length = 0;
-          (loaded.strokes || []).forEach((x) => s.strokes.push(x));
-          s.stickies.length = 0;
-          (loaded.stickies || []).forEach((x) => s.stickies.push(x));
-          s.textElements.length = 0;
-          (loaded.textElements || []).forEach((x) => s.textElements.push(x));
-          s.connectors.length = 0;
-          (loaded.connectors || []).forEach((x) => s.connectors.push(x));
-          s.frames.length = 0;
-          (loaded.frames || []).forEach((x) => s.frames.push(x));
-          s.nextSeq = loaded.nextSeq != null ? loaded.nextSeq : 0;
-          broadcastToBoard(boardId, {
-            type: 'STATE',
-            strokes: s.strokes,
-            stickies: s.stickies,
-            textElements: s.textElements,
-            connectors: s.connectors,
-            frames: s.frames
-          });
-          broadcastToBoard(boardId, { type: 'SEQ', nextSeq: s.nextSeq });
-        })
-        .catch((err) => console.error('Background load board state:', err.message || err));
+      loadBoardStateBackground(boardId, state).catch((err) =>
+        console.error('Background load board state:', err.message || err)
+      );
     });
   }
   return state;
@@ -356,10 +375,10 @@ function broadcastUsers(boardId) {
   wss.clients.forEach((c) => { if (onBoard(c)) c.send(payload); });
 }
 
-/** Mark board as dirty; actual save to Postgres happens in the periodic flush (keeps WebSocket path off the DB). */
+/** Mark board as dirty; actual save to Postgres and/or Redis happens in the periodic flush. */
 function persistBoard(boardId) {
-  if (!boardId || !db.hasDatabase()) return;
-  dirtyBoards.add(boardId);
+  if (!boardId) return;
+  if (db.hasDatabase() || redis.isAvailable()) dirtyBoards.add(boardId);
 }
 
 /** World bounds of all board content for fit-view. Returns { minX, minY, maxX, maxY } or null if empty. */
@@ -414,16 +433,32 @@ const heartbeatInterval = setInterval(() => {
     ws.isAlive = false;
     ws.ping();
   });
-  // Flush dirty boards to Postgres (keeps WebSocket path off DB)
-  if (db.hasDatabase() && dirtyBoards.size > 0) {
+  // Flush dirty boards to Postgres and/or Redis
+  if (dirtyBoards.size > 0) {
     const toFlush = Array.from(dirtyBoards);
     dirtyBoards.clear();
     toFlush.forEach((boardId) => {
       const state = getBoardState(boardId);
-      db.saveBoardState(boardId, state).catch((err) => {
-        console.error('persist board:', err.message || err);
-        dirtyBoards.add(boardId);
-      });
+      if (db.hasDatabase()) {
+        db.saveBoardState(boardId, state).catch((err) => {
+          console.error('persist board:', err.message || err);
+          dirtyBoards.add(boardId);
+        });
+      }
+      if (redis.isAvailable()) {
+        const payload = {
+          strokes: state.strokes,
+          stickies: state.stickies,
+          textElements: state.textElements,
+          connectors: state.connectors,
+          frames: state.frames,
+          nextSeq: state.nextSeq
+        };
+        redis.set(BOARD_STATE_KEY_PREFIX + boardId, payload, 0).catch((err) => {
+          console.error('persist board to Redis:', err.message || err);
+          dirtyBoards.add(boardId);
+        });
+      }
     });
   }
 }, HEARTBEAT_INTERVAL_MS);
