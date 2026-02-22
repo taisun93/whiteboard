@@ -102,6 +102,12 @@ function httpsGet(url, accessToken) {
   });
 }
 
+function isValidReturnUrl(s) {
+  if (typeof s !== 'string' || !s.startsWith('/')) return false;
+  if (s.includes('//')) return false;
+  return true;
+}
+
 app.get('/api/auth/google', (req, res) => {
   if (!GOOGLE_CLIENT_ID) {
     return res.status(500).json({
@@ -110,7 +116,12 @@ app.get('/api/auth/google', (req, res) => {
     });
   }
   const state = crypto.randomBytes(16).toString('hex');
-  res.cookie('auth_state', state, { httpOnly: true, sameSite: 'lax', maxAge: 10 * 60 * 1000 });
+  const cookieOpts = { httpOnly: true, sameSite: 'lax', maxAge: 10 * 60 * 1000 };
+  res.cookie('auth_state', state, cookieOpts);
+  const returnTo = req.query.return;
+  if (returnTo && isValidReturnUrl(returnTo)) {
+    res.cookie('auth_return', returnTo, cookieOpts);
+  }
   const redirectUri = getRedirectUri(req);
   const params = new URLSearchParams({
     client_id: GOOGLE_CLIENT_ID,
@@ -158,7 +169,9 @@ app.get('/api/auth/google/callback', (req, res) => {
             sameSite: 'lax',
             maxAge: 7 * 24 * 60 * 60 * 1000
           });
-          res.redirect(302, '/');
+          const returnTo = cookies.auth_return && isValidReturnUrl(cookies.auth_return) ? cookies.auth_return : '/';
+          res.clearCookie('auth_return', { httpOnly: true, sameSite: 'lax' });
+          res.redirect(302, returnTo);
         }
       );
     })

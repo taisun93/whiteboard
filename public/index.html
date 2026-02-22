@@ -255,6 +255,9 @@
         loginScreen.style.display = 'flex';
         appEl.classList.remove('logged-in');
         if (errMsg) loginError.textContent = errMsg;
+        var returnPath = (location.pathname || '/') + (location.search || '');
+        var authLink = document.getElementById('btn-google');
+        if (authLink) authLink.href = '/api/auth/google?return=' + encodeURIComponent(returnPath);
       }
       var ctrl = new AbortController();
       var t = setTimeout(function() { ctrl.abort(); }, 15000);

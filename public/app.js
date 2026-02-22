@@ -2785,7 +2785,15 @@ function showBoardPicker(list) {
         });
     })
     .catch(() => {
-      connect();
+      if (pathBoardId) {
+        currentBoardId = pathBoardId;
+        currentBoardName = 'Untitled';
+        updateBoardTitle();
+        setBoardUrl(pathBoardId);
+        connect(pathBoardId);
+      } else {
+        connect();
+      }
       draw();
       applyToolUI();
     });
