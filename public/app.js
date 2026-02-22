@@ -114,11 +114,56 @@ function updateBoardTitle() {
 const KEEPALIVE_INTERVAL_MS = 12000;
 let keepaliveTimerId = null;
 
+/** Clear all board state and reset view/tool state (e.g. when switching boards). */
+function clearBoardStateForSwitch() {
+  strokes.length = 0;
+  stickies.length = 0;
+  connectors.length = 0;
+  textElements.length = 0;
+  frames.length = 0;
+  pending.clear();
+  otherCursors.clear();
+  selectedStickyIds.clear();
+  selectedStrokeIds.clear();
+  selectedTextIds.clear();
+  selectedFrameIds.clear();
+  selectionRectStart = null;
+  selectionRectCurrent = null;
+  connectorPendingFrom = null;
+  connectorPreviewTo = null;
+  panX = VIEW_CENTER_X;
+  panY = VIEW_CENTER_Y;
+  zoom = 1;
+  drawing = false;
+  currentPoints = [];
+  currentStrokeId = null;
+  pendingShape = null;
+  pendingFrame = null;
+  movingStickyId = null;
+  movingTextId = null;
+  movingFrameId = null;
+  movingStrokeId = null;
+  resizingStickyId = null;
+  resizingStrokeId = null;
+}
+
 function connect(boardId) {
   if (keepaliveTimerId) {
     clearInterval(keepaliveTimerId);
     keepaliveTimerId = null;
   }
+  if (ws) {
+    ws.onmessage = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.close();
+    ws = null;
+  }
+  clearBoardStateForSwitch();
+  renderStickies();
+  renderTextElements();
+  draw();
+
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = boardId ? `${protocol}//${location.host}?board_id=${encodeURIComponent(boardId)}` : `${protocol}//${location.host}`;
   ws = new WebSocket(url);
