@@ -343,19 +343,12 @@ async function loadBoardStateBackground(boardId, state) {
   broadcastToBoard(boardId, { type: 'SEQ', nextSeq: s.nextSeq });
 }
 
-/** Sync: returns in-memory state (empty if first time). Kicks off background load from Redis and/or DB; when done, updates memory and broadcasts STATE. */
+/** Sync: returns in-memory state (empty if first time). Caller should await loadBoardStateBackground(boardId, state) when persistence is used, before sending STATE to clients or using state. */
 function ensureBoardState(boardId) {
   if (!boardId) return defaultState;
   if (boardStates.has(boardId)) return boardStates.get(boardId);
   const state = emptyBoardState();
   boardStates.set(boardId, state);
-  if (db.hasDatabase() || redis.isAvailable()) {
-    setImmediate(() => {
-      loadBoardStateBackground(boardId, state).catch((err) =>
-        console.error('Background load board state:', err.message || err)
-      );
-    });
-  }
   return state;
 }
 
@@ -509,6 +502,9 @@ wss.on('connection', async (ws, req) => {
   ws.boardId = boardId;
 
   ensureBoardState(boardId);
+  if (db.hasDatabase() || redis.isAvailable()) {
+    await loadBoardStateBackground(boardId, getBoardState(boardId));
+  }
 
   const clientId = `u${nextClientId++}`;
   ws.clientId = clientId;
@@ -1119,8 +1115,14 @@ app.post('/api/ai/command', async (req, res) => {
   });
 
   try {
-    const state = bid ? await ensureBoardState(bid) : getBoardState('default');
     const targetBoardId = bid || 'default';
+    if (bid) {
+      ensureBoardState(bid);
+      if (db.hasDatabase() || redis.isAvailable()) {
+        await loadBoardStateBackground(bid, getBoardState(bid));
+      }
+    }
+    const state = getBoardState(targetBoardId);
     function buildBoardStateJson(s) {
       return JSON.stringify({
         stickies: (s.stickies || []).map((st) => ({
