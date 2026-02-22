@@ -6,7 +6,6 @@ const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 let pool = null;
-let boardStateIdColumn = 'whiteboard_id';
 const memorySessions = new Map();
 
 async function init() {
@@ -54,9 +53,10 @@ async function init() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
+  // board_state.board_id = whiteboard UUID (same as URL ?board_id= and server boardId)
   await pool.query(`
     CREATE TABLE IF NOT EXISTS board_state (
-      whiteboard_id UUID PRIMARY KEY REFERENCES whiteboards(id) ON DELETE CASCADE,
+      board_id UUID PRIMARY KEY REFERENCES whiteboards(id) ON DELETE CASCADE,
       strokes JSONB NOT NULL DEFAULT '[]',
       stickies JSONB NOT NULL DEFAULT '[]',
       text_elements JSONB NOT NULL DEFAULT '[]',
@@ -65,11 +65,12 @@ async function init() {
       next_seq INTEGER NOT NULL DEFAULT 0
     )
   `);
-  const colCheck = await pool.query(
-    `SELECT column_name FROM information_schema.columns WHERE table_name = 'board_state' AND column_name IN ('whiteboard_id', 'board_id')`
-  );
-  if (colCheck.rows.length) {
-    boardStateIdColumn = colCheck.rows[0].column_name;
+  try {
+    await pool.query(
+      `ALTER TABLE board_state RENAME COLUMN whiteboard_id TO board_id`
+    );
+  } catch (e) {
+    if (e.code !== '42701' && e.code !== '42703') throw e;
   }
 
   try {
@@ -191,7 +192,7 @@ async function loadBoardState(whiteboardId) {
   if (!pool || !whiteboardId) return null;
   const r = await pool.query(
     `SELECT strokes, stickies, text_elements AS "textElements", connectors, frames, next_seq AS "nextSeq"
-     FROM board_state WHERE ${boardStateIdColumn} = $1`,
+     FROM board_state WHERE board_id = $1`,
     [whiteboardId]
   );
   if (!r.rows[0]) return null;
@@ -210,9 +211,9 @@ async function saveBoardState(whiteboardId, state) {
   if (!pool || !whiteboardId) return;
   const { strokes, stickies, textElements, connectors, frames, nextSeq } = state;
   await pool.query(
-    `INSERT INTO board_state (${boardStateIdColumn}, strokes, stickies, text_elements, connectors, frames, next_seq)
+    `INSERT INTO board_state (board_id, strokes, stickies, text_elements, connectors, frames, next_seq)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (${boardStateIdColumn}) DO UPDATE SET
+     ON CONFLICT (board_id) DO UPDATE SET
        strokes = $2, stickies = $3, text_elements = $4, connectors = $5, frames = $6, next_seq = $7`,
     [
       whiteboardId,
