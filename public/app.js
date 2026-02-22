@@ -657,6 +657,7 @@ function renderTextElements() {
     const h = (el.height || TEXT_DEFAULT_H) * zoom;
     div.style.color = el.color || '#e2e8f0';
     div.classList.toggle('selected', selectedTextIds.has(el.id));
+    div.classList.toggle('flowchart-label', !!el.centerLabel);
     div.style.left = `${pos.x * scaleX}px`;
     div.style.top = `${pos.y * scaleY}px`;
     div.style.width = `${w * scaleX}px`;

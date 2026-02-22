@@ -896,9 +896,11 @@ function executeTool(name, args, state, boardId) {
       state.strokes.push(stroke);
       broadcastToBoard(boardId, { type: 'STROKE_ADDED', stroke });
       const tid = id();
-      const tx = x + width / 2 - (TEXT_DEFAULT_W / 2);
-      const ty = y + height / 2 - (TEXT_DEFAULT_H / 2);
-      const textEl = { id: tid, x: tx, y: ty, text: String(text), color: '#e2e8f0', width: TEXT_DEFAULT_W, height: TEXT_DEFAULT_H };
+      const tw = Math.min(TEXT_DEFAULT_W, Math.max(60, width - 16));
+      const th = Math.min(TEXT_DEFAULT_H, Math.max(24, height - 12));
+      const tx = x + width / 2 - tw / 2;
+      const ty = y + height / 2 - th / 2;
+      const textEl = { id: tid, x: tx, y: ty, text: String(text), color: '#e2e8f0', width: tw, height: th, centerLabel: true };
       state.textElements.push(textEl);
       broadcastToBoard(boardId, { type: 'TEXT_ADDED', textElement: textEl });
       persistBoard(boardId);
