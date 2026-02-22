@@ -103,7 +103,14 @@ function parseHex(str) {
 let currentBoardId = null;
 let multiBoardMode = false;
 
+const KEEPALIVE_INTERVAL_MS = 12000;
+let keepaliveTimerId = null;
+
 function connect(boardId) {
+  if (keepaliveTimerId) {
+    clearInterval(keepaliveTimerId);
+    keepaliveTimerId = null;
+  }
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   const url = boardId ? `${protocol}//${location.host}?board_id=${encodeURIComponent(boardId)}` : `${protocol}//${location.host}`;
   ws = new WebSocket(url);
@@ -111,8 +118,17 @@ function connect(boardId) {
     window._reconnectAttempts = 0;
     statusEl.textContent = 'Connected';
     statusEl.classList.add('connected');
+    keepaliveTimerId = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try { ws.send(JSON.stringify({ type: 'PING' })); } catch (_) {}
+      }
+    }, KEEPALIVE_INTERVAL_MS);
   };
   ws.onclose = (ev) => {
+    if (keepaliveTimerId) {
+      clearInterval(keepaliveTimerId);
+      keepaliveTimerId = null;
+    }
     statusEl.textContent = 'Disconnected';
     statusEl.classList.remove('connected');
     if (ev.code === 4003 && currentBoardId) {

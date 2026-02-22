@@ -334,10 +334,16 @@ function getBoardWorldBounds(state) {
 const wss = new WebSocketServer({ server });
 
 // Keep connections alive and detect dead clients (e.g. prevents proxy idle timeouts on Render)
-const HEARTBEAT_INTERVAL_MS = 25000;
+const HEARTBEAT_INTERVAL_MS = 15000;
+const HEARTBEAT_MISSES_BEFORE_CLOSE = 2;
 const heartbeatInterval = setInterval(() => {
   wss.clients.forEach((ws) => {
-    if (ws.isAlive === false) return ws.terminate();
+    if (ws.isAlive === false) {
+      ws.missedPongs = (ws.missedPongs || 0) + 1;
+      if (ws.missedPongs >= HEARTBEAT_MISSES_BEFORE_CLOSE) return ws.terminate();
+    } else {
+      ws.missedPongs = 0;
+    }
     ws.isAlive = false;
     ws.ping();
   });
@@ -357,8 +363,9 @@ function parseBoardIdFromUrl(url) {
 wss.on('connection', async (ws, req) => {
   // Mark alive immediately so heartbeat doesn't kill the connection while we do DB work (getSession, ensureBoardState, etc.)
   ws.isAlive = true;
+  ws.missedPongs = 0;
   ws.on('error', (err) => console.error('WebSocket error:', err.message || err));
-  ws.on('pong', () => { ws.isAlive = true; });
+  ws.on('pong', () => { ws.isAlive = true; ws.missedPongs = 0; });
 
   try {
   const cookies = parseCookie(req.headers.cookie);
@@ -415,6 +422,11 @@ wss.on('connection', async (ws, req) => {
     try {
       msg = JSON.parse(raw.toString());
     } catch {
+      return;
+    }
+    if (msg.type === 'PING') {
+      ws.isAlive = true;
+      ws.missedPongs = 0;
       return;
     }
     try {
