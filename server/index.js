@@ -7,6 +7,7 @@ const crypto = require('crypto');
 const https = require('https');
 const { URL } = require('url');
 const db = require('./db');
+const redis = require('./redis');
 
 const app = express();
 app.use(express.json());
@@ -184,7 +185,7 @@ app.get('/api/me', async (req, res) => {
 app.post('/api/logout', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
   if (cookies.session) {
-    invalidateSessionCache(cookies.session);
+    await invalidateSessionCache(cookies.session);
     await db.deleteSession(cookies.session);
   }
   res.clearCookie('session');
@@ -193,18 +194,32 @@ app.post('/api/logout', async (req, res) => {
 
 const SESSION_CACHE_TTL_MS = 60000;
 const sessionCache = new Map();
+const SESSION_KEY_PREFIX = 'session:';
 
 async function getSessionCached(sessionId) {
   if (!sessionId) return null;
-  const entry = sessionCache.get(sessionId);
-  if (entry && entry.expires > Date.now()) return entry.session;
+  if (redis.isAvailable()) {
+    const cached = await redis.get(SESSION_KEY_PREFIX + sessionId);
+    if (cached) return cached;
+  } else {
+    const entry = sessionCache.get(sessionId);
+    if (entry && entry.expires > Date.now()) return entry.session;
+  }
   const session = await db.getSession(sessionId);
-  if (session) sessionCache.set(sessionId, { session, expires: Date.now() + SESSION_CACHE_TTL_MS });
+  if (session) {
+    if (redis.isAvailable()) {
+      await redis.set(SESSION_KEY_PREFIX + sessionId, session, SESSION_CACHE_TTL_MS);
+    } else {
+      sessionCache.set(sessionId, { session, expires: Date.now() + SESSION_CACHE_TTL_MS });
+    }
+  }
   return session;
 }
 
-function invalidateSessionCache(sessionId) {
-  if (sessionId) sessionCache.delete(sessionId);
+async function invalidateSessionCache(sessionId) {
+  if (!sessionId) return;
+  if (redis.isAvailable()) await redis.del(SESSION_KEY_PREFIX + sessionId);
+  else sessionCache.delete(sessionId);
 }
 
 async function ensureSessionUserId(sessionId, session) {
@@ -1101,6 +1116,7 @@ app.post('/api/ai/command', async (req, res) => {
 
 async function main() {
   await db.init();
+  await redis.init();
   const host = '0.0.0.0'; // accept connections from any interface (required on Render/Heroku etc.)
   server.on('error', (err) => {
     console.error('Server error:', err.message || err);

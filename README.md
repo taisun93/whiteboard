@@ -35,6 +35,18 @@ You **don’t** upload a `.env` file. Set everything in the Render dashboard.
 
 After deploy, the app will create the DB tables on first run. Sessions and board state persist across restarts.
 
+### Redis (optional, for multiple instances)
+
+To run more than one Web Service instance (or avoid in-memory session cache being lost on deploy), add a **Key Value** (Redis-compatible) instance:
+
+1. In the Render Dashboard go to **New → Key Value** (or [dashboard.render.com/new/redis](https://dashboard.render.com/new/redis)).
+2. Name it (e.g. `whiteboard-cache`), choose the **same region** as your Web Service, then **Create Key Value**.
+3. Open your Web Service → **Environment**. From the Key Value instance’s **Connect** menu copy the **Internal Connection URL** and add it as:
+   - **REDIS_URL** = that URL (e.g. `redis://red-xxx:6379`).
+4. Redeploy the Web Service.
+
+The app uses Redis for the session cache when `REDIS_URL` is set, and falls back to in-memory when it is not. No Redis is required for a single instance.
+
 ## Troubleshooting: "Access blocked: This app's request is invalid"
 
 This usually means the **redirect URI** Google received doesn’t match your **Authorized redirect URIs** in Google Cloud Console.
