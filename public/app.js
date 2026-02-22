@@ -270,6 +270,13 @@ function connect(boardId, fromReconnect) {
         renderTextElements();
         draw();
       }
+    } else if (msg.type === 'VIEW_FIT_BOUNDS') {
+      if (typeof msg.minX === 'number' && typeof msg.minY === 'number' && typeof msg.maxX === 'number' && typeof msg.maxY === 'number') {
+        fitViewToBounds(msg.minX, msg.minY, msg.maxX, msg.maxY);
+        draw();
+        renderStickies();
+        renderTextElements();
+      }
     } else if (msg.type === 'STROKE_ADDED') {
       const { stroke } = msg;
       if (pending.has(stroke.strokeId)) {

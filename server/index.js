@@ -566,6 +566,8 @@ wss.on('connection', async (ws, req) => {
   ws.send(JSON.stringify({ type: 'ME', clientId, username: ws.username }));
   const state = getBoardState(boardId);
   ws.send(JSON.stringify({ type: 'STATE', strokes: state.strokes, stickies: state.stickies, textElements: state.textElements, connectors: state.connectors, frames: state.frames }));
+  const bounds = getBoardWorldBounds(state);
+  if (bounds) ws.send(JSON.stringify({ type: 'VIEW_FIT_BOUNDS', minX: bounds.minX, minY: bounds.minY, maxX: bounds.maxX, maxY: bounds.maxY }));
   ws.send(JSON.stringify({ type: 'SEQ', nextSeq: state.nextSeq }));
   const cursors = cursorsByBoard.get(boardId);
   const cursorList = Array.from(cursors.entries()).map(([id, pos]) => ({ clientId: id, ...pos }));
