@@ -184,7 +184,6 @@ function connect(boardId) {
       renderStickies();
       renderTextElements();
       draw();
-      draw();
     } else if (msg.type === 'STROKE_ADDED') {
       const { stroke } = msg;
       if (pending.has(stroke.strokeId)) {
@@ -1177,16 +1176,15 @@ function rectEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld) {
   return { x: cx, y: cy - halfH };
 }
 
-/** Snap to center of diamond edge (top/bottom/left/right) toward otherWorld. Diamond edges have midpoints at (±halfW/2, ±halfH/2). */
+/** Snap to the diamond vertex in the direction of otherWorld (same as rect side center: top/bottom/left/right). */
 function diamondEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld) {
   const dx = otherWorld.x - cx, dy = otherWorld.y - cy;
   if (halfW < 1e-6 || halfH < 1e-6) return { x: cx, y: cy };
   const side = sideTowardOther(dx, dy);
-  const mx = halfW / 2, my = halfH / 2;
-  if (side === 0) return { x: cx + mx, y: cy + my };
-  if (side === 1) return { x: cx - mx, y: cy + my };
-  if (side === 2) return { x: cx - mx, y: cy - my };
-  return { x: cx + mx, y: cy - my };
+  if (side === 0) return { x: cx + halfW, y: cy };
+  if (side === 1) return { x: cx, y: cy + halfH };
+  if (side === 2) return { x: cx - halfW, y: cy };
+  return { x: cx, y: cy - halfH };
 }
 
 function strokeEdgePoint(stroke, otherWorld) {
@@ -1207,11 +1205,11 @@ function strokeEdgePoint(stroke, otherWorld) {
     const rx = halfW, ry = halfH;
     if (rx < 1e-6 || ry < 1e-6) return { x: cx, y: cy };
     const dx = otherWorld.x - cx, dy = otherWorld.y - cy;
-    const side = sideTowardOther(dx, dy);
-    if (side === 0) return { x: cx + rx, y: cy };
-    if (side === 1) return { x: cx, y: cy + ry };
-    if (side === 2) return { x: cx - rx, y: cy };
-    return { x: cx, y: cy - ry };
+    const dist = Math.hypot(dx, dy);
+    if (dist < 1e-6) return { x: cx + rx, y: cy };
+    // Point on ellipse boundary in direction of otherWorld: (cx + t*dx, cy + t*dy) with (t*dx/rx)^2 + (t*dy/ry)^2 = 1
+    const t = 1 / Math.sqrt((dx / rx) * (dx / rx) + (dy / ry) * (dy / ry));
+    return { x: cx + t * dx, y: cy + t * dy };
   }
   return strokeCenterWorld(stroke);
 }

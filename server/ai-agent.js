@@ -153,13 +153,13 @@ function getBoundModel() {
 
 const SYSTEM_PROMPT = `You are an assistant that helps users edit a shared whiteboard. The user will give you a natural language command. Use the available tools to change the board. Coordinates and sizes are in world units (e.g. 100, 200).
 
-Avoiding overlap: When creating new elements (stickies, frames, shapes, text), avoid placing them on top of existing content. You receive board state (stickies, textElements, frames, strokes with id, x, y, width, height). Before calling createStickyNote, createFrame, createShape, or adding text, check where existing items are. Choose x,y so the new object's bounding box does not overlap existing items—leave at least 20–40 units of space between the new element and any existing stickies, frames, text, or shapes. If the board already has content, place new items to the right, below, or in a clear empty region. When creating multiple items (e.g. a template), space them in a grid with gaps (e.g. 20–30 units) so they do not overlap each other or existing content.
+Avoiding overlap: When creating new elements (stickies, frames, shapes, text, connectors), avoid placing them where there is already content. Existing content includes: stickies, text elements, frames, shapes (strokes), and lines/connectors/arrows. You receive board state with id, x, y, width, height (and strokes have points; connectors have from/to). Before calling createStickyNote, createFrame, createShape, createFlowchartNode, or createConnector, check where existing items and lines are. Choose x,y so the new object's bounding box does not overlap existing items—leave at least 20–40 units of space between the new element and any existing stickies, frames, text, shapes, or connector paths. If the board already has content, place new items to the right, below, or in a clear empty region. When creating multiple items (e.g. a template or flowchart), space them in a grid with gaps (e.g. 20–30 units) so they do not overlap each other or existing content.
 
 Templates and multi-item layouts:
 - When the user asks for a "SWOT analysis", "four quadrants", "2x2 matrix", "quadrant template", or similar, use createQuadrantTemplate exactly once with four titles. For SWOT use: title1="Strengths", title2="Weaknesses", title3="Opportunities", title4="Threats" (in that order). Use a single createQuadrantTemplate call; do not create four separate frames.
 - When the user asks for a "template" with multiple sections, quadrants, or a matrix, prefer createQuadrantTemplate if there are four sections; otherwise create the right number of frames or stickies with createFrame/createStickyNote, spaced in a clear grid (e.g. 20-30 units apart).
 
-Flowcharts: When the user asks for a flowchart, diagram, or process flow: (1) Create each node with createFlowchartNode (process, decision, start, end) with clear labels. Space nodes so they do not overlap (e.g. 150–200 units apart). (2) You MUST then call createConnector to connect the nodes with arrows. For each consecutive pair of nodes, call createConnector(fromId, toId) using the strokeId of each shape from getBoardState (use strokeId so arrows attach to the shape edges). Example: after creating start (strokeId S1), process (S2), decision (S3), end (S4), call createConnector(S1, S2), createConnector(S2, S3), createConnector(S3, S4). Always connect every node to the next so the flowchart has visible arrows between elements.
+Flowcharts: When the user asks for a flowchart, diagram, or process flow: (1) Create each node with createFlowchartNode (process, decision, start, end) with clear labels. Space nodes so they do not overlap (e.g. 150–200 units apart). (2) Call getBoardState again to retrieve the updated board state with the new nodes' strokeId and text element id. (3) Then call createConnector(fromId, toId) for each consecutive pair of nodes using the strokeId of each shape from that getBoardState result (use strokeId so arrows attach to the shape edges). Always connect every node to the next so the flowchart has visible arrows between elements.
 
 If the user asks to move, resize, update, or connect something, call getBoardState first to see current objects and their IDs, then call the appropriate mutation tool. When you receive the result of getBoardState, use the exact IDs from that data. For createConnector, fromId and toId can be: a sticky id, a text element id, a stroke id, or a point as "x,y" (e.g. "100,200"). After each command the app automatically zooms so all elements are visible; you may still use centerView(x, y, zoom?) to focus the user on a specific area. Reply briefly to the user after you are done.`;
 
@@ -167,12 +167,16 @@ const MAX_AGENT_TURNS = 6;
 
 /**
  * @param {string} command - User's natural language command
- * @param {string} boardStateJson - JSON string of current board state (stickies, strokes, textElements, frames, connectors) for context
- * @returns {Promise<{ message: string, toolCalls: Array<{ id: string, name: string, args: object }> }>}
+ * @param {string} initialBoardStateJson - JSON string of board state at start (for first user message)
+ * @param {{ getBoardStateJson: () => string, executeTool: (name: string, args: object) => void }} options - getBoardStateJson returns current state (after any executed tools); executeTool runs a mutation and updates state
+ * @returns {Promise<{ message: string, toolCalls: Array<{ id: string, name: string, args: object }>, viewCenter: object|null }>}
  */
-async function runAiCommand(command, boardStateJson) {
-  const stateSummary = boardStateJson
-    ? `Current board state summary (call getBoardState to get full IDs and details):\n${boardStateJson.slice(0, 4000)}`
+async function runAiCommand(command, initialBoardStateJson, options = {}) {
+  const { getBoardStateJson, executeTool } = options;
+  const useLiveState = typeof getBoardStateJson === 'function' && typeof executeTool === 'function';
+
+  const stateSummary = initialBoardStateJson
+    ? `Current board state summary (call getBoardState to get full IDs and details):\n${initialBoardStateJson.slice(0, 4000)}`
     : 'Board state not provided. Call getBoardState to see the board.';
 
   const userContent = `${stateSummary}\n\nUser command: ${command}`;
@@ -201,8 +205,9 @@ async function runAiCommand(command, boardStateJson) {
       const name = tc.name || '';
       const args = tc.args || {};
       if (name === 'getBoardState') {
+        const content = useLiveState ? getBoardStateJson() : (initialBoardStateJson || '{}');
         toolResults.push(new ToolMessage({
-          content: boardStateJson || '{}',
+          content,
           tool_call_id: tc.id
         }));
       } else if (name === 'centerView') {
@@ -213,11 +218,26 @@ async function runAiCommand(command, boardStateJson) {
           tool_call_id: tc.id
         }));
       } else {
-        allMutationCalls.push({ id: tc.id, name, args });
-        toolResults.push(new ToolMessage({
-          content: 'Queued for execution.',
-          tool_call_id: tc.id
-        }));
+        if (useLiveState) {
+          try {
+            executeTool(name, args);
+            toolResults.push(new ToolMessage({
+              content: 'Executed. Call getBoardState to see updated state and new IDs (e.g. strokeId, text element id) before creating connectors.',
+              tool_call_id: tc.id
+            }));
+          } catch (err) {
+            toolResults.push(new ToolMessage({
+              content: `Error: ${(err && err.message) || err}.`,
+              tool_call_id: tc.id
+            }));
+          }
+        } else {
+          allMutationCalls.push({ id: tc.id, name, args });
+          toolResults.push(new ToolMessage({
+            content: 'Queued for execution.',
+            tool_call_id: tc.id
+          }));
+        }
       }
     }
     messages.push(...toolResults);

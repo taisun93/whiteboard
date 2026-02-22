@@ -168,7 +168,7 @@ app.get('/api/auth/google/callback', (req, res) => {
 app.get('/api/me', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
   const sessionId = cookies.session;
-  const session = sessionId ? await db.getSession(sessionId) : null;
+  const session = sessionId ? await getSessionCached(sessionId) : null;
   if (!session) {
     return res.status(401).json({ error: 'Not logged in' });
   }
@@ -236,7 +236,7 @@ async function ensureSessionUserId(sessionId, session) {
 app.get('/api/whiteboards', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
   const sessionId = cookies.session;
-  let session = sessionId ? await db.getSession(sessionId) : null;
+  let session = sessionId ? await getSessionCached(sessionId) : null;
   if (!session) return res.status(401).json({ error: 'Not logged in' });
   session = await ensureSessionUserId(sessionId, session);
   if (!session.userId) return res.status(401).json({ error: 'Not logged in' });
@@ -252,7 +252,7 @@ app.get('/api/whiteboards', async (req, res) => {
 app.post('/api/whiteboards', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
   const sessionId = cookies.session;
-  let session = sessionId ? await db.getSession(sessionId) : null;
+  let session = sessionId ? await getSessionCached(sessionId) : null;
   if (!session) return res.status(401).json({ error: 'Not logged in' });
   session = await ensureSessionUserId(sessionId, session);
   if (!session.userId) return res.status(401).json({ error: 'Not logged in' });
@@ -1054,7 +1054,7 @@ app.post('/api/ai/command', async (req, res) => {
   }
   let session;
   try {
-    session = await db.getSession(sessionId);
+    session = await getSessionCached(sessionId);
   } catch (err) {
     console.error('Session lookup error:', err);
     return res.status(500).json({ error: 'Not authenticated', hint: 'Session lookup failed.' });
@@ -1085,54 +1085,56 @@ app.post('/api/ai/command', async (req, res) => {
 
   try {
     const state = bid ? await ensureBoardState(bid) : getBoardState('default');
-    const boardStateJson = JSON.stringify({
-      stickies: (state.stickies || []).map((s) => ({
-        id: s.id,
-        x: s.x,
-        y: s.y,
-        width: s.width,
-        height: s.height,
-        text: (s.text || '').slice(0, 200),
-        color: s.color
-      })),
-      strokes: (state.strokes || []).map((s) => ({
-        strokeId: s.strokeId,
-        shape: s.shape,
-        color: s.color,
-        points: s.points && s.points.length ? s.points.slice(0, 2) : []
-      })),
-      textElements: (state.textElements || []).map((t) => ({
-        id: t.id,
-        x: t.x,
-        y: t.y,
-        width: t.width,
-        height: t.height,
-        text: (t.text || '').slice(0, 200),
-        color: t.color
-      })),
-      frames: (state.frames || []).map((f) => ({
-        id: f.id,
-        x: f.x,
-        y: f.y,
-        width: f.width,
-        height: f.height,
-        title: (f.title || '').slice(0, 100)
-      })),
-      connectors: (state.connectors || []).map((c) => ({
-        id: c.id,
-        from: c.from,
-        to: c.to,
-        color: c.color
-      }))
-    });
+    const targetBoardId = bid || 'default';
+    function buildBoardStateJson(s) {
+      return JSON.stringify({
+        stickies: (s.stickies || []).map((st) => ({
+          id: st.id,
+          x: st.x,
+          y: st.y,
+          width: st.width,
+          height: st.height,
+          text: (st.text || '').slice(0, 200),
+          color: st.color
+        })),
+        strokes: (s.strokes || []).map((st) => ({
+          strokeId: st.strokeId,
+          shape: st.shape,
+          color: st.color,
+          points: st.points && st.points.length ? st.points.slice(0, 2) : []
+        })),
+        textElements: (s.textElements || []).map((t) => ({
+          id: t.id,
+          x: t.x,
+          y: t.y,
+          width: t.width,
+          height: t.height,
+          text: (t.text || '').slice(0, 200),
+          color: t.color
+        })),
+        frames: (s.frames || []).map((f) => ({
+          id: f.id,
+          x: f.x,
+          y: f.y,
+          width: f.width,
+          height: f.height,
+          title: (f.title || '').slice(0, 100)
+        })),
+        connectors: (s.connectors || []).map((c) => ({
+          id: c.id,
+          from: c.from,
+          to: c.to,
+          color: c.color
+        }))
+      });
+    }
+    const initialBoardStateJson = buildBoardStateJson(state);
+    const getBoardStateJson = () => buildBoardStateJson(state);
+    const executeToolForAgent = (name, args) => executeTool(name, args, state, targetBoardId);
     const { message, toolCalls, viewCenter } = await Promise.race([
-      runAiCommand(command.trim(), boardStateJson),
+      runAiCommand(command.trim(), initialBoardStateJson, { getBoardStateJson, executeTool: executeToolForAgent }),
       timeoutPromise
     ]);
-    const targetBoardId = bid || 'default';
-    for (const tc of toolCalls) {
-      executeTool(tc.name, tc.args, state, targetBoardId);
-    }
     const payload = { ok: true, message, toolCalls: toolCalls.length };
     const bounds = getBoardWorldBounds(state);
     if (bounds) {
