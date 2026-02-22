@@ -1634,6 +1634,11 @@ canvas.addEventListener('pointerdown', (e) => {
     clampTextToVisible(textEl);
     textElements.push(textEl);
     renderTextElements();
+    requestAnimationFrame(() => {
+      const div = document.querySelector(`#text-layer [data-id="${id}"]`);
+      const content = div && div.querySelector('.text-content');
+      if (content) content.focus();
+    });
     if (ws && ws.readyState === 1) {
       ws.send(JSON.stringify({
         type: 'ADD_TEXT_ELEMENT',
