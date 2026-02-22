@@ -333,6 +333,17 @@ function getBoardWorldBounds(state) {
 
 const wss = new WebSocketServer({ server });
 
+// Keep connections alive and detect dead clients (e.g. prevents proxy idle timeouts on Render)
+const HEARTBEAT_INTERVAL_MS = 25000;
+const heartbeatInterval = setInterval(() => {
+  wss.clients.forEach((ws) => {
+    if (ws.isAlive === false) return ws.terminate();
+    ws.isAlive = false;
+    ws.ping();
+  });
+}, HEARTBEAT_INTERVAL_MS);
+wss.on('close', () => clearInterval(heartbeatInterval));
+
 let nextClientId = 0;
 
 function parseBoardIdFromUrl(url) {
@@ -376,6 +387,10 @@ wss.on('connection', async (ws, req) => {
   ws.clientId = clientId;
 
   if (!cursorsByBoard.has(boardId)) cursorsByBoard.set(boardId, new Map());
+
+  ws.isAlive = true;
+  ws.on('error', (err) => console.error('WebSocket error:', err.message || err));
+  ws.on('pong', () => { ws.isAlive = true; });
 
   ws.send(JSON.stringify({ type: 'ME', clientId, username: ws.username }));
   const state = getBoardState(boardId);

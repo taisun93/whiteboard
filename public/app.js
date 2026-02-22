@@ -101,6 +101,7 @@ function connect(boardId) {
   const url = boardId ? `${protocol}//${location.host}?board_id=${encodeURIComponent(boardId)}` : `${protocol}//${location.host}`;
   ws = new WebSocket(url);
   ws.onopen = () => {
+    window._reconnectAttempts = 0;
     statusEl.textContent = 'Connected';
     statusEl.classList.add('connected');
   };
@@ -112,7 +113,12 @@ function connect(boardId) {
       currentBoardId = null;
       if (multiBoardMode && typeof showBoardPicker === 'function') showBoardPicker();
     } else {
-      setTimeout(() => connect(currentBoardId), 2000);
+      const delay = Math.min(2000 * Math.pow(2, (window._reconnectAttempts || 0)), 30000);
+      window._reconnectAttempts = (window._reconnectAttempts || 0) + 1;
+      statusEl.textContent = 'Reconnecting…';
+      setTimeout(() => {
+        connect(currentBoardId);
+      }, delay);
     }
   };
   ws.onmessage = (e) => {
