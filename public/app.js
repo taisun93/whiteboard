@@ -329,9 +329,8 @@ function renderStickies() {
   const layer = document.getElementById('stickies-layer');
   if (!layer) return;
   const rect = canvas.getBoundingClientRect();
-  const scale = Math.min(rect.width / CANVAS_W, rect.height / CANVAS_H) || 1;
-  const contentLeft = (rect.width - CANVAS_W * scale) / 2;
-  const contentTop = (rect.height - CANVAS_H * scale) / 2;
+  const scaleX = rect.width / CANVAS_W;
+  const scaleY = rect.height / CANVAS_H;
   const existing = new Set(Array.from(layer.querySelectorAll('.sticky-note'), (el) => el.dataset.id));
   stickies.forEach((s) => {
     existing.delete(s.id);
@@ -478,14 +477,14 @@ function renderStickies() {
     const h = s.height * zoom;
     el.style.background = s.color || '#fef9c3';
     el.classList.toggle('selected', selectedStickyIds.has(s.id));
-    el.style.left = `${contentLeft + pos.x * scale}px`;
-    el.style.top = `${contentTop + pos.y * scale}px`;
-    el.style.width = `${w * scale}px`;
-    el.style.height = `${h * scale}px`;
+    el.style.left = `${pos.x * scaleX}px`;
+    el.style.top = `${pos.y * scaleY}px`;
+    el.style.width = `${w * scaleX}px`;
+    el.style.height = `${h * scaleY}px`;
     const body = el.querySelector('.sticky-body');
     const header = el.querySelector('.sticky-header');
-    const dispH = h * scale;
-    const dispW = w * scale;
+    const dispH = h * scaleY;
+    const dispW = w * scaleX;
     const fs = Math.max(2, dispH * 0.12);
     const pad = Math.max(1, dispH * 0.04);
     if (body) {
@@ -512,9 +511,8 @@ function renderTextElements() {
   const layer = document.getElementById('text-layer');
   if (!layer) return;
   const rect = canvas.getBoundingClientRect();
-  const scale = Math.min(rect.width / CANVAS_W, rect.height / CANVAS_H) || 1;
-  const contentLeft = (rect.width - CANVAS_W * scale) / 2;
-  const contentTop = (rect.height - CANVAS_H * scale) / 2;
+  const scaleX = rect.width / CANVAS_W;
+  const scaleY = rect.height / CANVAS_H;
   const existing = new Set(Array.from(layer.querySelectorAll('.text-element'), (el) => el.dataset.id));
   textElements.forEach((el) => {
     existing.delete(el.id);
@@ -612,12 +610,12 @@ function renderTextElements() {
     const h = (el.height || TEXT_DEFAULT_H) * zoom;
     div.style.color = el.color || '#e2e8f0';
     div.classList.toggle('selected', selectedTextIds.has(el.id));
-    div.style.left = `${contentLeft + pos.x * scale}px`;
-    div.style.top = `${contentTop + pos.y * scale}px`;
-    div.style.width = `${w * scale}px`;
-    div.style.minHeight = `${h * scale}px`;
-    const dispH = h * scale;
-    const dispW = w * scale;
+    div.style.left = `${pos.x * scaleX}px`;
+    div.style.top = `${pos.y * scaleY}px`;
+    div.style.width = `${w * scaleX}px`;
+    div.style.minHeight = `${h * scaleY}px`;
+    const dispH = h * scaleY;
+    const dispW = w * scaleX;
     const fs = Math.max(2, dispH * 0.5);
     div.style.fontSize = `${fs}px`;
     div.style.lineHeight = 1.25;
@@ -868,12 +866,12 @@ function draw() {
 
 function toCanvasCoords(e) {
   const r = canvas.getBoundingClientRect();
-  const scale = Math.min(r.width / CANVAS_W, r.height / CANVAS_H) || 1;
-  const contentLeft = (r.width - CANVAS_W * scale) / 2;
-  const contentTop = (r.height - CANVAS_H * scale) / 2;
-  const canvasX = (e.clientX - r.left - contentLeft) / scale;
-  const canvasY = (e.clientY - r.top - contentTop) / scale;
-  return { x: canvasX, y: canvasY };
+  const scaleX = canvas.width / r.width;
+  const scaleY = canvas.height / r.height;
+  return {
+    x: (e.clientX - r.left) * scaleX,
+    y: (e.clientY - r.top) * scaleY
+  };
 }
 
 function canvasToWorld(canvasX, canvasY) {
