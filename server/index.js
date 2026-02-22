@@ -1027,8 +1027,13 @@ function broadcastUsers() {
 
 async function main() {
   await db.init();
-  server.listen(PORT, () => {
-    console.log(`http://localhost:${PORT}`);
+  const host = '0.0.0.0'; // accept connections from any interface (required on Render/Heroku etc.)
+  server.on('error', (err) => {
+    console.error('Server error:', err.message || err);
+    if (err.code === 'EADDRINUSE') console.error(`Port ${PORT} is already in use.`);
+  });
+  server.listen(PORT, host, () => {
+    console.log(`Server listening on http://${host}:${PORT}`);
   });
 }
 
