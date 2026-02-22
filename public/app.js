@@ -650,8 +650,9 @@ function draw() {
     ctx.fillRect(x, y, w, h);
     if (f.title) {
       ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
-      ctx.font = `bold ${Math.max(10, 12 / zoom)}px system-ui`;
-      ctx.fillText(f.title, x + 8, y + 18);
+      const titleFontSize = Math.max(6, h * 0.12);
+      ctx.font = `bold ${titleFontSize}px system-ui`;
+      ctx.fillText(f.title, x + 8, y + titleFontSize + 6);
     }
   });
   if (pendingFrame) {
@@ -1618,8 +1619,36 @@ canvas.addEventListener('pointerdown', (e) => {
     return;
   }
   if (e.button !== 0) return;
-  if (!ws || ws.readyState !== 1) return;
   const pt = toWorldCoords(e);
+  if (tool === 'text') {
+    const id = uuid();
+    const textEl = {
+      id,
+      x: pt.x,
+      y: pt.y,
+      text: '',
+      color: selectedColor,
+      width: TEXT_DEFAULT_W,
+      height: TEXT_DEFAULT_H
+    };
+    clampTextToVisible(textEl);
+    textElements.push(textEl);
+    renderTextElements();
+    if (ws && ws.readyState === 1) {
+      ws.send(JSON.stringify({
+        type: 'ADD_TEXT_ELEMENT',
+        id,
+        x: textEl.x,
+        y: textEl.y,
+        text: '',
+        color: selectedColor,
+        width: TEXT_DEFAULT_W,
+        height: TEXT_DEFAULT_H
+      }));
+    }
+    return;
+  }
+  if (!ws || ws.readyState !== 1) return;
   if (tool === 'move') {
     const resizeHandleStroke = getShapeResizeHandleAtPoint(pt.x, pt.y);
     if (resizeHandleStroke) {
@@ -1675,32 +1704,6 @@ canvas.addEventListener('pointerdown', (e) => {
     const hitStroke = getTopmostStrokeAtPoint(pt.x, pt.y);
     if (hitStroke) handleConnectorEndpoint({ type: 'stroke', strokeId: hitStroke });
     else handleConnectorEndpoint({ type: 'point', x: pt.x, y: pt.y });
-    return;
-  }
-  if (tool === 'text') {
-    const id = uuid();
-    const textEl = {
-      id,
-      x: pt.x,
-      y: pt.y,
-      text: '',
-      color: selectedColor,
-      width: TEXT_DEFAULT_W,
-      height: TEXT_DEFAULT_H
-    };
-    clampTextToVisible(textEl);
-    textElements.push(textEl);
-    renderTextElements();
-    ws.send(JSON.stringify({
-      type: 'ADD_TEXT_ELEMENT',
-      id,
-      x: textEl.x,
-      y: textEl.y,
-      text: '',
-      color: selectedColor,
-      width: TEXT_DEFAULT_W,
-      height: TEXT_DEFAULT_H
-    }));
     return;
   }
   if (tool === 'sticky') {
