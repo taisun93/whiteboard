@@ -868,9 +868,12 @@ function draw() {
 
 function toCanvasCoords(e) {
   const r = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / r.width;
-  const scaleY = canvas.height / r.height;
-  return { x: (e.clientX - r.left) * scaleX, y: (e.clientY - r.top) * scaleY };
+  const scale = Math.min(r.width / CANVAS_W, r.height / CANVAS_H) || 1;
+  const contentLeft = (r.width - CANVAS_W * scale) / 2;
+  const contentTop = (r.height - CANVAS_H * scale) / 2;
+  const canvasX = (e.clientX - r.left - contentLeft) / scale;
+  const canvasY = (e.clientY - r.top - contentTop) / scale;
+  return { x: canvasX, y: canvasY };
 }
 
 function canvasToWorld(canvasX, canvasY) {
