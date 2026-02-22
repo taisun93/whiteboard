@@ -160,7 +160,7 @@ function clearBoardStateForSwitch() {
   pendingSends.length = 0;
 }
 
-function connect(boardId) {
+function connect(boardId, fromReconnect) {
   if (keepaliveTimerId) {
     clearInterval(keepaliveTimerId);
     keepaliveTimerId = null;
@@ -172,7 +172,7 @@ function connect(boardId) {
     ws.close();
     ws = null;
   }
-  clearBoardStateForSwitch();
+  if (!fromReconnect) clearBoardStateForSwitch();
   renderStickies();
   renderTextElements();
   draw();
@@ -208,7 +208,7 @@ function connect(boardId) {
       window._reconnectAttempts = (window._reconnectAttempts || 0) + 1;
       statusEl.textContent = 'Reconnecting…';
       setTimeout(() => {
-        connect(currentBoardId);
+        connect(currentBoardId, true);
       }, delay);
     }
   };

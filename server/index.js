@@ -593,13 +593,19 @@ wss.on('connection', async (ws, req) => {
       return;
     }
     if (msg.type === 'CURSOR_MOVE' && typeof msg.x === 'number' && typeof msg.y === 'number') {
-      cursors.set(clientId, { x: msg.x, y: msg.y });
-      broadcastToBoard(ws.boardId, { type: 'CURSOR_MOVE', clientId, x: msg.x, y: msg.y });
+      const cid = ws.clientId;
+      if (cid) {
+        cursors.set(cid, { x: msg.x, y: msg.y });
+        broadcastToBoard(ws.boardId, { type: 'CURSOR_MOVE', clientId: cid, x: msg.x, y: msg.y });
+      }
       return;
     }
     if (msg.type === 'CURSOR_LEFT') {
-      cursors.delete(clientId);
-      broadcastToBoard(ws.boardId, { type: 'CURSOR_LEFT', clientId });
+      const cid = ws.clientId;
+      if (cid) {
+        cursors.delete(cid);
+        broadcastToBoard(ws.boardId, { type: 'CURSOR_LEFT', clientId: cid });
+      }
       return;
     }
     if (msg.type === 'ADD_STICKY' && msg.id && typeof msg.x === 'number' && typeof msg.y === 'number') {

@@ -55,7 +55,7 @@ async function init() {
   `);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS board_state (
-      whiteboard_id UUID PRIMARY KEY REFERENCES whiteboards(id) ON DELETE CASCADE,
+      board_id UUID PRIMARY KEY REFERENCES whiteboards(id) ON DELETE CASCADE,
       strokes JSONB NOT NULL DEFAULT '[]',
       stickies JSONB NOT NULL DEFAULT '[]',
       text_elements JSONB NOT NULL DEFAULT '[]',
@@ -64,6 +64,11 @@ async function init() {
       next_seq INTEGER NOT NULL DEFAULT 0
     )
   `);
+  try {
+    await pool.query('ALTER TABLE board_state RENAME COLUMN whiteboard_id TO board_id');
+  } catch (e) {
+    if (e.code !== '42701' && e.code !== '42703') throw e;
+  }
 
   try {
     await pool.query('ALTER TABLE sessions ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL');
@@ -184,7 +189,7 @@ async function loadBoardState(whiteboardId) {
   if (!pool || !whiteboardId) return null;
   const r = await pool.query(
     `SELECT strokes, stickies, text_elements AS "textElements", connectors, frames, next_seq AS "nextSeq"
-     FROM board_state WHERE whiteboard_id = $1`,
+     FROM board_state WHERE board_id = $1`,
     [whiteboardId]
   );
   if (!r.rows[0]) return null;
@@ -203,9 +208,9 @@ async function saveBoardState(whiteboardId, state) {
   if (!pool || !whiteboardId) return;
   const { strokes, stickies, textElements, connectors, frames, nextSeq } = state;
   await pool.query(
-    `INSERT INTO board_state (whiteboard_id, strokes, stickies, text_elements, connectors, frames, next_seq)
+    `INSERT INTO board_state (board_id, strokes, stickies, text_elements, connectors, frames, next_seq)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (whiteboard_id) DO UPDATE SET
+     ON CONFLICT (board_id) DO UPDATE SET
        strokes = $2, stickies = $3, text_elements = $4, connectors = $5, frames = $6, next_seq = $7`,
     [
       whiteboardId,
