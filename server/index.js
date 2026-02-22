@@ -409,8 +409,9 @@ wss.on('connection', async (ws, req) => {
     } catch {
       return;
     }
-    const state = getBoardState(ws.boardId);
-    const cursors = cursorsByBoard.get(ws.boardId) || new Map();
+    try {
+      const state = getBoardState(ws.boardId);
+      const cursors = cursorsByBoard.get(ws.boardId) || new Map();
 
     if (msg.type === 'ADD_STROKE') {
       if (!Array.isArray(msg.points) || !msg.strokeId) return;
@@ -684,6 +685,9 @@ wss.on('connection', async (ws, req) => {
       }
       return;
     }
+    } catch (err) {
+      console.error('WebSocket message error:', err.message || err);
+    }
   });
 
   ws.on('close', () => {
@@ -940,6 +944,11 @@ app.post('/api/ai/command', async (req, res) => {
     const allowed = await db.isUserInWhiteboard(session.userId, bid);
     if (!allowed) return res.status(403).json({ error: 'Not allowed on this whiteboard' });
   }
+  const AI_COMMAND_TIMEOUT_MS = 120000;
+  const timeoutPromise = new Promise((_, reject) => {
+    setTimeout(() => reject(new Error('Request timed out')), AI_COMMAND_TIMEOUT_MS);
+  });
+
   try {
     const state = bid ? await ensureBoardState(bid) : getBoardState('default');
     const boardStateJson = JSON.stringify({
@@ -982,7 +991,10 @@ app.post('/api/ai/command', async (req, res) => {
         color: c.color
       }))
     });
-    const { message, toolCalls, viewCenter } = await runAiCommand(command.trim(), boardStateJson);
+    const { message, toolCalls, viewCenter } = await Promise.race([
+      runAiCommand(command.trim(), boardStateJson),
+      timeoutPromise
+    ]);
     const targetBoardId = bid || 'default';
     for (const tc of toolCalls) {
       executeTool(tc.name, tc.args, state, targetBoardId);
@@ -997,7 +1009,8 @@ app.post('/api/ai/command', async (req, res) => {
     res.json(payload);
   } catch (err) {
     console.error('AI command error:', err);
-    res.status(500).json({ error: err.message || 'AI command failed' });
+    const isTimeout = err.message === 'Request timed out';
+    res.status(isTimeout ? 504 : 500).json({ error: err.message || 'AI command failed' });
   }
 });
 

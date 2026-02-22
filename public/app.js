@@ -42,6 +42,13 @@ let pointerStartCanvasX = 0;
 let pointerStartCanvasY = 0;
 let spaceKey = false;
 
+/** fetch with timeout so requests fail with a clear message instead of hanging. */
+function fetchWithTimeout(url, options, ms) {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), ms);
+  return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(t));
+}
+
 let ws = null;
 let drawing = false;
 let currentPoints = [];
@@ -2333,15 +2340,19 @@ window.addEventListener('resize', () => {
     try {
       const body = { command: text };
       if (currentBoardId) body.boardId = currentBoardId;
-      const res = await fetch('/api/ai/command', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify(body)
-      });
+      const res = await fetchWithTimeout(
+        '/api/ai/command',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify(body)
+        },
+        120000
+      );
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setStatus(data.error || 'Request failed', 'error');
+        setStatus(res.status === 504 ? 'Request timed out' : (data.error || 'Request failed'), 'error');
         return;
       }
       const msg = data.message || 'Done.';
@@ -2354,7 +2365,7 @@ window.addEventListener('resize', () => {
         centerView(data.viewCenter.x, data.viewCenter.y, data.viewCenter.zoom);
       }
     } catch (err) {
-      setStatus(err.message || 'Network error', 'error');
+      setStatus(err.name === 'AbortError' ? 'Request timed out' : (err.message || 'Network error'), 'error');
     } finally {
       runBtn.disabled = false;
     }
@@ -2398,12 +2409,12 @@ function showBoardPicker(list) {
   });
   function createAndOpen() {
     const name = (newName && newName.value) ? newName.value.trim() || 'Untitled' : 'Untitled';
-    fetch('/api/whiteboards', {
+    fetchWithTimeout('/api/whiteboards', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify({ name })
-    })
+    }, 15000)
       .then((r) => {
         if (!r.ok) throw new Error('Create failed');
         return r.json();
@@ -2430,7 +2441,7 @@ function showBoardPicker(list) {
 }
 
 (function initBoardAndConnect() {
-  fetch('/api/me', { credentials: 'include' })
+  fetchWithTimeout('/api/me', { credentials: 'include' }, 15000)
     .then((r) => r.json())
     .then((data) => {
       multiBoardMode = !!data.multiBoard;
@@ -2440,7 +2451,7 @@ function showBoardPicker(list) {
         applyToolUI();
         return;
       }
-      return fetch('/api/whiteboards', { credentials: 'include' })
+      return fetchWithTimeout('/api/whiteboards', { credentials: 'include' }, 15000)
         .then((res) => res.json())
         .then((wb) => {
           const list = wb.whiteboards || [];
@@ -2470,7 +2481,7 @@ function showBoardPicker(list) {
       if (ws) { ws.close(); ws = null; }
       currentBoardId = null;
       try { sessionStorage.removeItem('whiteboardId'); } catch (_) {}
-      fetch('/api/whiteboards', { credentials: 'include' })
+      fetchWithTimeout('/api/whiteboards', { credentials: 'include' }, 15000)
         .then((r) => r.json())
         .then((wb) => showBoardPicker(wb.whiteboards || []))
         .catch(() => showBoardPicker([]));

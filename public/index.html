@@ -242,12 +242,15 @@
         appEl.classList.remove('logged-in');
         if (errMsg) loginError.textContent = errMsg;
       }
-      fetch('/api/me', { credentials: 'include' })
+      var ctrl = new AbortController();
+      var t = setTimeout(function() { ctrl.abort(); }, 15000);
+      fetch('/api/me', { credentials: 'include', signal: ctrl.signal })
         .then(function(r) {
+          clearTimeout(t);
           if (r.ok) return r.json().then(function() { showApp(); });
           showLogin();
         })
-        .catch(function() { showLogin(); });
+        .catch(function() { clearTimeout(t); showLogin(); });
     })();
   </script>
 </body>
