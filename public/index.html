@@ -6,12 +6,13 @@
   <title>Whiteboard Sync</title>
   <style>
     * { box-sizing: border-box; }
-    body { margin: 0; background: #1a1a2e; color: #eee; font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; min-height: 100vh; }
-    #toolbar { padding: 8px 12px; background: #16213e; display: flex; align-items: center; gap: 12px; }
+    html, body { margin: 0; height: 100vh; overflow: hidden; }
+    body { background: #1a1a2e; color: #eee; font: 14px/1.4 system-ui, sans-serif; display: flex; flex-direction: column; }
+    #toolbar { padding: 8px 12px; background: #16213e; display: flex; align-items: center; gap: 12px; flex-shrink: 0; }
     #status { color: #888; }
     #status.connected { color: #4ade80; }
     #app-title { font-weight: 600; font-size: 15px; color: #e2e8f0; letter-spacing: 0.02em; }
-    #main { flex: 1; display: flex; min-height: 0; }
+    #main { flex: 1; display: flex; min-height: 0; overflow: hidden; }
     #tool-menu {
       position: absolute; left: 12px; top: 12px;
       width: 48px; z-index: 20;
@@ -43,8 +44,8 @@
     #tool-menu .color-hex { width: 40px; padding: 4px 6px; font-size: 10px; font-family: monospace; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; color: #334155; text-align: center; }
     #tool-menu .color-hex:focus { outline: none; border-color: #3b82f6; }
     #tool-menu .color-hex::placeholder { color: #94a3b8; }
-    #board-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
-    #board-inner { flex: 1; position: relative; min-height: 0; display: flex; }
+    #board-wrap { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; overflow: hidden; }
+    #board-inner { flex: 1; position: relative; min-height: 0; display: flex; overflow: hidden; }
     #board-inner canvas { display: block; cursor: crosshair; background: #0f0f1a; flex: 1; width: 100%; height: 100%; object-fit: contain; }
     #board-inner.hand-tool canvas { cursor: grab; }
     #board-inner.hand-tool canvas:active { cursor: grabbing; }
@@ -83,15 +84,15 @@
     #login-box .btn-google:hover { background: #f9fafb; border-color: #9ca3af; }
     #login-box .btn-google svg { width: 18px; height: 18px; }
     #login-error { margin-top: 12px; color: #f87171; font-size: 13px; }
-    #app { display: none; flex-direction: column; min-height: 100vh; }
+    #app { display: none; flex-direction: column; height: 100vh; overflow: hidden; }
     #app.logged-in { display: flex; }
     #ai-command-panel {
-      position: fixed; bottom: 0; left: 0; right: 0;
+      flex-shrink: 0;
       background: #16213e; border-top: 1px solid #1e293b;
-      z-index: 100; display: flex; flex-direction: column;
+      display: flex; flex-direction: column;
       box-shadow: 0 -4px 12px rgba(0,0,0,0.2);
     }
-    .ai-panel-body { padding: 12px 14px 16px; max-height: 220px; overflow: auto; }
+    .ai-panel-body { padding: 12px 14px 16px; max-height: 180px; overflow: auto; flex-shrink: 0; }
     .ai-panel-label {
       display: block; font-size: 11px; color: #94a3b8; margin-bottom: 6px;
       text-transform: uppercase; letter-spacing: 0.04em;
