@@ -183,10 +183,29 @@ app.get('/api/me', async (req, res) => {
 
 app.post('/api/logout', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
-  if (cookies.session) await db.deleteSession(cookies.session);
+  if (cookies.session) {
+    invalidateSessionCache(cookies.session);
+    await db.deleteSession(cookies.session);
+  }
   res.clearCookie('session');
   res.json({ ok: true });
 });
+
+const SESSION_CACHE_TTL_MS = 60000;
+const sessionCache = new Map();
+
+async function getSessionCached(sessionId) {
+  if (!sessionId) return null;
+  const entry = sessionCache.get(sessionId);
+  if (entry && entry.expires > Date.now()) return entry.session;
+  const session = await db.getSession(sessionId);
+  if (session) sessionCache.set(sessionId, { session, expires: Date.now() + SESSION_CACHE_TTL_MS });
+  return session;
+}
+
+function invalidateSessionCache(sessionId) {
+  if (sessionId) sessionCache.delete(sessionId);
+}
 
 async function ensureSessionUserId(sessionId, session) {
   if (!session || session.userId) return session;
@@ -258,18 +277,51 @@ function emptyBoardState() {
 const defaultState = emptyBoardState();
 const boardStates = new Map();
 const cursorsByBoard = new Map();
+/** Board IDs that have in-memory changes not yet written to Postgres. Flushed periodically. */
+const dirtyBoards = new Set();
 
 function getBoardState(boardId) {
   if (boardId && boardStates.has(boardId)) return boardStates.get(boardId);
   return defaultState;
 }
 
-async function ensureBoardState(boardId) {
+/** Sync: returns in-memory state (empty if first time). Kicks off background load from DB; when done, updates memory and broadcasts STATE so all clients on that board get it. */
+function ensureBoardState(boardId) {
   if (!boardId) return defaultState;
   if (boardStates.has(boardId)) return boardStates.get(boardId);
-  const loaded = await db.loadBoardState(boardId);
-  const state = loaded || emptyBoardState();
+  const state = emptyBoardState();
   boardStates.set(boardId, state);
+  if (db.hasDatabase()) {
+    setImmediate(() => {
+      db.loadBoardState(boardId)
+        .then((loaded) => {
+          if (!loaded || dirtyBoards.has(boardId)) return;
+          const s = boardStates.get(boardId);
+          if (!s || s !== state) return;
+          s.strokes.length = 0;
+          (loaded.strokes || []).forEach((x) => s.strokes.push(x));
+          s.stickies.length = 0;
+          (loaded.stickies || []).forEach((x) => s.stickies.push(x));
+          s.textElements.length = 0;
+          (loaded.textElements || []).forEach((x) => s.textElements.push(x));
+          s.connectors.length = 0;
+          (loaded.connectors || []).forEach((x) => s.connectors.push(x));
+          s.frames.length = 0;
+          (loaded.frames || []).forEach((x) => s.frames.push(x));
+          s.nextSeq = loaded.nextSeq != null ? loaded.nextSeq : 0;
+          broadcastToBoard(boardId, {
+            type: 'STATE',
+            strokes: s.strokes,
+            stickies: s.stickies,
+            textElements: s.textElements,
+            connectors: s.connectors,
+            frames: s.frames
+          });
+          broadcastToBoard(boardId, { type: 'SEQ', nextSeq: s.nextSeq });
+        })
+        .catch((err) => console.error('Background load board state:', err.message || err));
+    });
+  }
   return state;
 }
 
@@ -289,10 +341,10 @@ function broadcastUsers(boardId) {
   wss.clients.forEach((c) => { if (onBoard(c)) c.send(payload); });
 }
 
+/** Mark board as dirty; actual save to Postgres happens in the periodic flush (keeps WebSocket path off the DB). */
 function persistBoard(boardId) {
   if (!boardId || !db.hasDatabase()) return;
-  const state = getBoardState(boardId);
-  db.saveBoardState(boardId, state).catch((err) => console.error('persist board:', err));
+  dirtyBoards.add(boardId);
 }
 
 /** World bounds of all board content for fit-view. Returns { minX, minY, maxX, maxY } or null if empty. */
@@ -347,6 +399,18 @@ const heartbeatInterval = setInterval(() => {
     ws.isAlive = false;
     ws.ping();
   });
+  // Flush dirty boards to Postgres (keeps WebSocket path off DB)
+  if (db.hasDatabase() && dirtyBoards.size > 0) {
+    const toFlush = Array.from(dirtyBoards);
+    dirtyBoards.clear();
+    toFlush.forEach((boardId) => {
+      const state = getBoardState(boardId);
+      db.saveBoardState(boardId, state).catch((err) => {
+        console.error('persist board:', err.message || err);
+        dirtyBoards.add(boardId);
+      });
+    });
+  }
 }, HEARTBEAT_INTERVAL_MS);
 wss.on('close', () => clearInterval(heartbeatInterval));
 
@@ -370,7 +434,7 @@ wss.on('connection', async (ws, req) => {
   try {
   const cookies = parseCookie(req.headers.cookie);
   const sessionId = cookies.session;
-  let session = sessionId ? await db.getSession(sessionId) : null;
+  let session = sessionId ? await getSessionCached(sessionId) : null;
   session = session ? await ensureSessionUserId(sessionId, session) : null;
   ws.username = session ? session.name : 'anonymous';
 
@@ -394,7 +458,7 @@ wss.on('connection', async (ws, req) => {
   }
   ws.boardId = boardId;
 
-  await ensureBoardState(boardId);
+  ensureBoardState(boardId);
 
   const clientId = `u${nextClientId++}`;
   ws.clientId = clientId;
