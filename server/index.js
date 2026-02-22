@@ -268,6 +268,14 @@ app.post('/api/whiteboards', async (req, res) => {
   }
 });
 
+app.get('/board/:boardId', (req, res) => {
+  if (req.params.boardId && UUID_REGEX.test(req.params.boardId)) {
+    res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  } else {
+    res.redirect(302, '/');
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 const server = http.createServer(app);
 
@@ -475,8 +483,16 @@ wss.on('close', () => clearInterval(heartbeatInterval));
 
 let nextClientId = 0;
 
+const BOARD_PATH_PREFIX = '/board/';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
 function parseBoardIdFromUrl(url) {
   if (!url || typeof url !== 'string') return null;
+  const path = url.split('?')[0] || '';
+  if (path.startsWith(BOARD_PATH_PREFIX)) {
+    const segment = path.slice(BOARD_PATH_PREFIX.length).split('/')[0];
+    if (UUID_REGEX.test(segment)) return segment;
+  }
   const i = url.indexOf('?');
   if (i === -1) return null;
   const params = new URLSearchParams(url.slice(i));
@@ -507,10 +523,15 @@ wss.on('connection', async (ws, req) => {
       ws.close(4001, 'auth required');
       return;
     }
-    const allowed = await db.isUserInWhiteboard(session.userId, boardId);
+    let allowed = await db.isUserInWhiteboard(session.userId, boardId);
     if (!allowed) {
-      ws.close(4003, 'not in whiteboard');
-      return;
+      try {
+        await db.addUserToWhiteboard(session.userId, boardId);
+        allowed = true;
+      } catch (e) {
+        ws.close(4003, 'not in whiteboard');
+        return;
+      }
     }
   } else {
     boardId = 'default';

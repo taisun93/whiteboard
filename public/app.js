@@ -104,6 +104,23 @@ function parseHex(str) {
   return null;
 }
 
+const BOARD_PATH_PREFIX = '/board/';
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function getBoardIdFromPath() {
+  const path = (typeof location !== 'undefined' && location.pathname) || '';
+  if (!path.startsWith(BOARD_PATH_PREFIX)) return null;
+  const segment = path.slice(BOARD_PATH_PREFIX.length).split('/')[0];
+  return UUID_REGEX.test(segment) ? segment : null;
+}
+
+function setBoardUrl(boardId) {
+  if (typeof history === 'undefined') return;
+  const path = boardId ? `${BOARD_PATH_PREFIX}${boardId}` : '/';
+  const url = path + (location.search || '');
+  if (location.pathname + location.search !== url) history.replaceState({ boardId }, '', url);
+}
+
 let currentBoardId = null;
 let currentBoardName = null;
 let multiBoardMode = false;
@@ -178,7 +195,8 @@ function connect(boardId, fromReconnect) {
   draw();
 
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = boardId ? `${protocol}//${location.host}?board_id=${encodeURIComponent(boardId)}` : `${protocol}//${location.host}`;
+  const wsPath = boardId ? `${BOARD_PATH_PREFIX}${boardId}` : '/';
+  const url = `${protocol}//${location.host}${wsPath}`;
   ws = new WebSocket(url);
   ws.onopen = () => {
     window._reconnectAttempts = 0;
@@ -2668,6 +2686,7 @@ function showBoardPicker(list) {
       currentBoardId = b.id;
       currentBoardName = b.name || 'Untitled';
       updateBoardTitle();
+      setBoardUrl(b.id);
       try { sessionStorage.setItem('whiteboardId', b.id); } catch (_) {}
       picker.classList.add('hidden');
       const sw = document.getElementById('switch-board-btn');
@@ -2698,6 +2717,7 @@ function showBoardPicker(list) {
         currentBoardId = data.id;
         currentBoardName = (data.name || name) || 'Untitled';
         updateBoardTitle();
+        setBoardUrl(data.id);
         try { sessionStorage.setItem('whiteboardId', data.id); } catch (_) {}
         picker.classList.add('hidden');
         const sw = document.getElementById('switch-board-btn');
@@ -2717,6 +2737,7 @@ function showBoardPicker(list) {
 }
 
 (function initBoardAndConnect() {
+  const pathBoardId = getBoardIdFromPath();
   fetchWithTimeout('/api/me', { credentials: 'include' }, 15000)
     .then((r) => r.json())
     .then((data) => {
@@ -2731,12 +2752,28 @@ function showBoardPicker(list) {
         .then((res) => res.json())
         .then((wb) => {
           const list = wb.whiteboards || [];
+          const fromPath = pathBoardId && (list.some((b) => b.id === pathBoardId) || true);
+          if (fromPath && pathBoardId) {
+            currentBoardId = pathBoardId;
+            const board = list.find((b) => b.id === pathBoardId);
+            currentBoardName = board ? (board.name || 'Untitled') : 'Untitled';
+            updateBoardTitle();
+            setBoardUrl(pathBoardId);
+            try { sessionStorage.setItem('whiteboardId', pathBoardId); } catch (_) {}
+            connect(pathBoardId);
+            draw();
+            applyToolUI();
+            const sw = document.getElementById('switch-board-btn');
+            if (sw) sw.classList.remove('hidden');
+            return;
+          }
           const saved = (function () { try { return sessionStorage.getItem('whiteboardId'); } catch (_) { return null; } })();
           if (saved && list.some((b) => b.id === saved)) {
             const board = list.find((b) => b.id === saved);
             currentBoardId = saved;
             currentBoardName = board ? (board.name || 'Untitled') : 'Untitled';
             updateBoardTitle();
+            setBoardUrl(saved);
             connect(saved);
             draw();
             applyToolUI();
