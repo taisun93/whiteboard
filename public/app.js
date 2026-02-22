@@ -2685,9 +2685,14 @@ window.addEventListener('resize', () => {
 function showBoardPicker(list) {
   const picker = document.getElementById('board-picker');
   const listEl = document.getElementById('board-picker-list');
+  const loadingEl = document.getElementById('board-picker-loading');
   const newName = document.getElementById('new-board-name');
   const newBtn = document.getElementById('new-board-btn');
   if (!picker || !listEl) return;
+  if (loadingEl) {
+    loadingEl.style.display = (list && list.length > 0) ? 'none' : 'block';
+    loadingEl.textContent = (list && list.length === 0) ? 'No boards yet. Create one below.' : 'Loading…';
+  }
   listEl.innerHTML = '';
   (list || []).forEach((b) => {
     const li = document.createElement('li');
@@ -2695,6 +2700,7 @@ function showBoardPicker(list) {
     btn.type = 'button';
     btn.textContent = b.name || 'Untitled';
     btn.addEventListener('click', () => {
+      document.getElementById('app').classList.remove('landing');
       currentBoardId = b.id;
       currentBoardName = b.name || 'Untitled';
       updateBoardTitle();
@@ -2726,6 +2732,7 @@ function showBoardPicker(list) {
       })
       .then((data) => {
         if (!data || !data.id) return;
+        document.getElementById('app').classList.remove('landing');
         currentBoardId = data.id;
         currentBoardName = (data.name || name) || 'Untitled';
         updateBoardTitle();
@@ -2750,11 +2757,13 @@ function showBoardPicker(list) {
 
 (function initBoardAndConnect() {
   const pathBoardId = getBoardIdFromPath();
+  if (pathBoardId) document.getElementById('app').classList.remove('landing');
   fetchWithTimeout('/api/me', { credentials: 'include' }, 15000)
     .then((r) => r.json())
     .then((data) => {
       multiBoardMode = !!data.multiBoard;
       if (!multiBoardMode) {
+        document.getElementById('app').classList.remove('landing');
         connect();
         draw();
         applyToolUI();
@@ -2779,24 +2788,11 @@ function showBoardPicker(list) {
             if (sw) sw.classList.remove('hidden');
             return;
           }
-          const saved = (function () { try { return sessionStorage.getItem('whiteboardId'); } catch (_) { return null; } })();
-          if (saved && list.some((b) => b.id === saved)) {
-            const board = list.find((b) => b.id === saved);
-            currentBoardId = saved;
-            currentBoardName = board ? (board.name || 'Untitled') : 'Untitled';
-            updateBoardTitle();
-            setBoardUrl(saved);
-            connect(saved);
-            draw();
-            applyToolUI();
-            const sw = document.getElementById('switch-board-btn');
-            if (sw) sw.classList.remove('hidden');
-            return;
-          }
           showBoardPicker(list);
         });
     })
     .catch(() => {
+      document.getElementById('app').classList.remove('landing');
       if (pathBoardId) {
         currentBoardId = pathBoardId;
         currentBoardName = 'Untitled';
@@ -2825,6 +2821,7 @@ function showBoardPicker(list) {
       currentBoardName = null;
       updateBoardTitle();
       try { sessionStorage.removeItem('whiteboardId'); } catch (_) {}
+      document.getElementById('app').classList.add('landing');
       fetchWithTimeout('/api/whiteboards', { credentials: 'include' }, 15000)
         .then((r) => r.json())
         .then((wb) => showBoardPicker(wb.whiteboards || []))

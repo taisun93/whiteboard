@@ -131,23 +131,41 @@
     .ai-command-status { font-size: 12px; color: #94a3b8; margin-bottom: 8px; min-height: 1.2em; }
     .ai-command-status.error { color: #f87171; }
     .ai-command-status.success { color: #4ade80; }
+    #app.landing #toolbar,
+    #app.landing #main,
+    #app.landing #ai-command-panel { display: none !important; }
+    #app.landing #board-picker { display: flex !important; }
     #board-picker {
       position: fixed; inset: 0; z-index: 200;
-      background: #1a1a2e; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px;
+      background: linear-gradient(165deg, #0f0f1a 0%, #1a1a2e 40%, #16213e 100%);
+      display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px;
     }
     #board-picker.hidden { display: none; }
-    #board-picker h2 { margin: 0 0 16px 0; font-size: 18px; color: #e2e8f0; }
-    #board-picker ul { list-style: none; margin: 0 0 20px 0; padding: 0; width: 100%; max-width: 360px; }
-    #board-picker li { margin-bottom: 8px; }
+    #board-picker .landing-header { text-align: center; margin-bottom: 40px; }
+    #board-picker .landing-title { font-size: 2rem; font-weight: 700; color: #f1f5f9; letter-spacing: -0.02em; margin: 0 0 8px 0; }
+    #board-picker .landing-subtitle { font-size: 0.95rem; color: #94a3b8; margin: 0; font-weight: 400; }
+    #board-picker h2 { margin: 0 0 20px 0; font-size: 0.8rem; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: 0.08em; }
+    #board-picker .landing-list-wrap { width: 100%; max-width: 420px; }
+    #board-picker ul { list-style: none; margin: 0 0 24px 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+    #board-picker li { margin: 0; }
     #board-picker li button {
-      width: 100%; padding: 12px 16px; text-align: left; background: #16213e; border: 1px solid #1e293b;
-      border-radius: 8px; color: #e2e8f0; font-size: 14px; cursor: pointer;
+      width: 100%; padding: 16px 20px; text-align: left; background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(51, 65, 85, 0.5);
+      border-radius: 12px; color: #e2e8f0; font-size: 15px; cursor: pointer; transition: background 0.2s, border-color 0.2s, transform 0.15s;
     }
-    #board-picker li button:hover { background: #1e293b; border-color: #334155; }
-    #board-picker .new-board { display: flex; gap: 8px; max-width: 360px; width: 100%; margin-top: 8px; }
-    #board-picker .new-board input { flex: 1; padding: 10px 12px; border: 1px solid #1e293b; border-radius: 6px; background: #0f0f1a; color: #eee; font-size: 14px; }
-    #board-picker .new-board button { padding: 10px 18px; border: none; border-radius: 6px; background: #3b82f6; color: #fff; font-size: 14px; cursor: pointer; }
-    #board-picker .new-board button:hover { background: #2563eb; }
+    #board-picker li button:hover { background: rgba(51, 65, 85, 0.5); border-color: #475569; transform: translateY(-1px); }
+    #board-picker .new-board { display: flex; gap: 10px; max-width: 420px; width: 100%; margin-top: 4px; }
+    #board-picker .new-board input {
+      flex: 1; padding: 14px 18px; border: 1px solid rgba(51, 65, 85, 0.6); border-radius: 10px;
+      background: rgba(15, 15, 26, 0.8); color: #eee; font-size: 15px; transition: border-color 0.2s;
+    }
+    #board-picker .new-board input:focus { outline: none; border-color: #3b82f6; }
+    #board-picker .new-board input::placeholder { color: #64748b; }
+    #board-picker .new-board button {
+      padding: 14px 24px; border: none; border-radius: 10px; background: #3b82f6; color: #fff; font-size: 15px; font-weight: 600; cursor: pointer;
+      transition: background 0.2s, transform 0.15s;
+    }
+    #board-picker .new-board button:hover { background: #2563eb; transform: translateY(-1px); }
+    #board-picker .landing-loading { color: #64748b; font-size: 14px; padding: 24px; text-align: center; }
   </style>
 </head>
 <body>
@@ -164,11 +182,18 @@
   </div>
   <div id="app">
   <div id="board-picker" class="hidden" aria-label="Choose a whiteboard">
-    <h2>Choose a whiteboard</h2>
-    <ul id="board-picker-list"></ul>
-    <div class="new-board">
-      <input type="text" id="new-board-name" placeholder="New whiteboard name" value="Untitled" />
-      <button type="button" id="new-board-btn">Create new</button>
+    <div class="landing-header">
+      <h1 class="landing-title">Whiteboard</h1>
+      <p class="landing-subtitle">Pick a board or create one to start</p>
+    </div>
+    <div class="landing-list-wrap">
+      <h2>Your whiteboards</h2>
+      <div id="board-picker-loading" class="landing-loading" aria-live="polite">Loading…</div>
+      <ul id="board-picker-list"></ul>
+      <div class="new-board">
+        <input type="text" id="new-board-name" placeholder="New whiteboard name" value="Untitled" />
+        <button type="button" id="new-board-btn">Create new</button>
+      </div>
     </div>
   </div>
   <div id="toolbar">
@@ -246,7 +271,7 @@
       var errMsg = { invalid_callback: 'Invalid sign-in callback.', config: 'Google sign-in not configured.', token: 'Could not get token.', auth_failed: 'Sign-in failed.' }[err] || (err ? 'Sign-in failed.' : '');
       function showApp() {
         loginScreen.style.display = 'none';
-        appEl.classList.add('logged-in');
+        appEl.classList.add('logged-in', 'landing');
         var s = document.createElement('script');
         s.src = '/app.js';
         document.body.appendChild(s);
