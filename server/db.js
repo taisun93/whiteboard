@@ -6,6 +6,8 @@ const { Pool } = require('pg');
 
 const DATABASE_URL = process.env.DATABASE_URL;
 let pool = null;
+/** Resolved at init: actual column name for board id in board_state (whiteboard_id, board_id, or id). */
+let boardStateIdColumn = null;
 const memorySessions = new Map();
 
 async function init() {
@@ -53,7 +55,7 @@ async function init() {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )
   `);
-  // board_state.whiteboard_id = whiteboard UUID (same as URL ?board_id= and server boardId)
+  // board_state: ensure table and a single id column for the whiteboard UUID
   await pool.query(`
     CREATE TABLE IF NOT EXISTS board_state (
       whiteboard_id UUID PRIMARY KEY REFERENCES whiteboards(id) ON DELETE CASCADE,
@@ -72,6 +74,26 @@ async function init() {
   } catch (e) {
     if (e.code !== '42701' && e.code !== '42703') throw e;
   }
+  const colRes = await pool.query(
+    `SELECT table_schema, column_name FROM information_schema.columns
+     WHERE table_name = 'board_state'
+     AND column_name IN ('whiteboard_id', 'board_id', 'id')
+     ORDER BY table_schema = 'public' DESC, CASE column_name WHEN 'whiteboard_id' THEN 1 WHEN 'board_id' THEN 2 WHEN 'id' THEN 3 ELSE 4 END
+     LIMIT 1`
+  );
+  if (colRes.rows.length) {
+    boardStateIdColumn = colRes.rows[0].column_name;
+  } else {
+    const anyCol = await pool.query(
+      `SELECT column_name FROM information_schema.columns
+       WHERE table_name = 'board_state'
+       ORDER BY (table_schema = 'public') DESC, ordinal_position
+       LIMIT 1`
+    );
+    boardStateIdColumn = anyCol.rows.length ? anyCol.rows[0].column_name : 'whiteboard_id';
+  }
+  if (!boardStateIdColumn) boardStateIdColumn = 'whiteboard_id';
+  console.log('PostgreSQL board_state id column:', boardStateIdColumn);
 
   try {
     await pool.query('ALTER TABLE sessions ADD COLUMN user_id UUID REFERENCES users(id) ON DELETE SET NULL');
@@ -190,9 +212,10 @@ async function addUserToWhiteboard(userId, whiteboardId) {
 
 async function loadBoardState(whiteboardId) {
   if (!pool || !whiteboardId) return null;
+  const col = boardStateIdColumn || 'whiteboard_id';
   const r = await pool.query(
     `SELECT strokes, stickies, text_elements AS "textElements", connectors, frames, next_seq AS "nextSeq"
-     FROM board_state WHERE whiteboard_id = $1`,
+     FROM board_state WHERE ${col} = $1`,
     [whiteboardId]
   );
   if (!r.rows[0]) return null;
@@ -210,10 +233,11 @@ async function loadBoardState(whiteboardId) {
 async function saveBoardState(whiteboardId, state) {
   if (!pool || !whiteboardId) return;
   const { strokes, stickies, textElements, connectors, frames, nextSeq } = state;
+  const col = boardStateIdColumn || 'whiteboard_id';
   await pool.query(
-    `INSERT INTO board_state (whiteboard_id, strokes, stickies, text_elements, connectors, frames, next_seq)
+    `INSERT INTO board_state (${col}, strokes, stickies, text_elements, connectors, frames, next_seq)
      VALUES ($1, $2, $3, $4, $5, $6, $7)
-     ON CONFLICT (whiteboard_id) DO UPDATE SET
+     ON CONFLICT (${col}) DO UPDATE SET
        strokes = $2, stickies = $3, text_elements = $4, connectors = $5, frames = $6, next_seq = $7`,
     [
       whiteboardId,
