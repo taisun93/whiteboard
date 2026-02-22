@@ -1148,78 +1148,45 @@ function strokeCenterWorld(s) {
 }
 
 function stickyEdgePoint(sticky, otherWorld) {
-  const cx = sticky.x + sticky.width / 2;
-  const cy = sticky.y + sticky.height / 2;
-  let dx = otherWorld.x - cx;
-  let dy = otherWorld.y - cy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { x: cx, y: cy };
-  dx /= len;
-  dy /= len;
-  const x1 = sticky.x, x2 = sticky.x + sticky.width, y1 = sticky.y, y2 = sticky.y + sticky.height;
-  let bestT = Infinity;
-  if (dx !== 0) {
-    let t = (x1 - cx) / dx;
-    if (t > 0) {
-      const y = cy + t * dy;
-      if (y >= y1 && y <= y2) bestT = Math.min(bestT, t);
-    }
-    t = (x2 - cx) / dx;
-    if (t > 0) {
-      const y = cy + t * dy;
-      if (y >= y1 && y <= y2) bestT = Math.min(bestT, t);
-    }
-  }
-  if (dy !== 0) {
-    let t = (y1 - cy) / dy;
-    if (t > 0) {
-      const x = cx + t * dx;
-      if (x >= x1 && x <= x2) bestT = Math.min(bestT, t);
-    }
-    t = (y2 - cy) / dy;
-    if (t > 0) {
-      const x = cx + t * dx;
-      if (x >= x1 && x <= x2) bestT = Math.min(bestT, t);
-    }
-  }
-  if (bestT === Infinity) return { x: cx, y: cy };
-  return { x: cx + bestT * dx, y: cy + bestT * dy };
+  const w = sticky.width || STICKY_DEFAULT_W, h = sticky.height || STICKY_DEFAULT_H;
+  const cx = sticky.x + w / 2, cy = sticky.y + h / 2;
+  return rectEdgePointFromCenter(cx, cy, w / 2, h / 2, otherWorld);
 }
 
-/** Ray from (cx,cy) toward otherWorld hits axis-aligned rect [cx-halfW, cx+halfW] x [cy-halfH, cy+halfH]. */
+/** General rule: snap to the center of the top, bottom, left, or right side relative to the other object.
+ *  Returns which side (0=right, 1=bottom, 2=left, 3=top) the direction (dx,dy) from center points toward. */
+function sideTowardOther(dx, dy) {
+  if (Math.hypot(dx, dy) < 1e-6) return 0;
+  const nx = dx / Math.hypot(dx, dy);
+  const ny = dy / Math.hypot(dx, dy);
+  const right = nx, bottom = ny, left = -nx, top = -ny;
+  const m = Math.max(right, bottom, left, top);
+  if (m === right) return 0;
+  if (m === bottom) return 1;
+  if (m === left) return 2;
+  return 3;
+}
+
+/** Snap to center of rect side (top/bottom/left/right) toward otherWorld. */
 function rectEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld) {
-  let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { x: cx, y: cy };
-  dx /= len;
-  dy /= len;
-  let bestT = Infinity;
-  if (dx !== 0) {
-    let t = (-halfW - 0) / dx;
-    if (t > 0) { const y = dy * t; if (y >= -halfH && y <= halfH) bestT = Math.min(bestT, t); }
-    t = (halfW - 0) / dx;
-    if (t > 0) { const y = dy * t; if (y >= -halfH && y <= halfH) bestT = Math.min(bestT, t); }
-  }
-  if (dy !== 0) {
-    let t = (-halfH - 0) / dy;
-    if (t > 0) { const x = dx * t; if (x >= -halfW && x <= halfW) bestT = Math.min(bestT, t); }
-    t = (halfH - 0) / dy;
-    if (t > 0) { const x = dx * t; if (x >= -halfW && x <= halfW) bestT = Math.min(bestT, t); }
-  }
-  if (bestT === Infinity) return { x: cx, y: cy };
-  return { x: cx + bestT * dx, y: cy + bestT * dy };
+  const dx = otherWorld.x - cx, dy = otherWorld.y - cy;
+  const side = sideTowardOther(dx, dy);
+  if (side === 0) return { x: cx + halfW, y: cy };
+  if (side === 1) return { x: cx, y: cy + halfH };
+  if (side === 2) return { x: cx - halfW, y: cy };
+  return { x: cx, y: cy - halfH };
 }
 
-/** Diamond = rotated square (L1 ball). Ray from center hits |u|/halfW + |v|/halfH = 1. */
+/** Snap to center of diamond edge (top/bottom/left/right) toward otherWorld. Diamond edges have midpoints at (±halfW/2, ±halfH/2). */
 function diamondEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld) {
-  let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { x: cx, y: cy };
-  dx /= len;
-  dy /= len;
+  const dx = otherWorld.x - cx, dy = otherWorld.y - cy;
   if (halfW < 1e-6 || halfH < 1e-6) return { x: cx, y: cy };
-  const t = 1 / (Math.abs(dx) / halfW + Math.abs(dy) / halfH);
-  return { x: cx + t * dx, y: cy + t * dy };
+  const side = sideTowardOther(dx, dy);
+  const mx = halfW / 2, my = halfH / 2;
+  if (side === 0) return { x: cx + mx, y: cy + my };
+  if (side === 1) return { x: cx - mx, y: cy + my };
+  if (side === 2) return { x: cx - mx, y: cy - my };
+  return { x: cx + mx, y: cy - my };
 }
 
 function strokeEdgePoint(stroke, otherWorld) {
@@ -1239,42 +1206,20 @@ function strokeEdgePoint(stroke, otherWorld) {
   if (stroke.shape === 'circle') {
     const rx = halfW, ry = halfH;
     if (rx < 1e-6 || ry < 1e-6) return { x: cx, y: cy };
-    let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
-    const len = Math.hypot(dx, dy);
-    if (len < 1e-6) return { x: cx, y: cy };
-    dx /= len;
-    dy /= len;
-    const t = 1 / Math.sqrt((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry));
-    return { x: cx + t * dx, y: cy + t * dy };
+    const dx = otherWorld.x - cx, dy = otherWorld.y - cy;
+    const side = sideTowardOther(dx, dy);
+    if (side === 0) return { x: cx + rx, y: cy };
+    if (side === 1) return { x: cx, y: cy + ry };
+    if (side === 2) return { x: cx - rx, y: cy };
+    return { x: cx, y: cy - ry };
   }
   return strokeCenterWorld(stroke);
 }
 
 function textElementEdgePoint(el, otherWorld) {
-  const cx = el.x + (el.width || TEXT_DEFAULT_W) / 2;
-  const cy = el.y + (el.height || TEXT_DEFAULT_H) / 2;
-  const x1 = el.x, x2 = el.x + (el.width || TEXT_DEFAULT_W);
-  const y1 = el.y, y2 = el.y + (el.height || TEXT_DEFAULT_H);
-  let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { x: cx, y: cy };
-  dx /= len;
-  dy /= len;
-  let bestT = Infinity;
-  if (dx !== 0) {
-    let t = (x1 - cx) / dx;
-    if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
-    t = (x2 - cx) / dx;
-    if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
-  }
-  if (dy !== 0) {
-    let t = (y1 - cy) / dy;
-    if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
-    t = (y2 - cy) / dy;
-    if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
-  }
-  if (bestT === Infinity) return { x: cx, y: cy };
-  return { x: cx + bestT * dx, y: cy + bestT * dy };
+  const w = el.width || TEXT_DEFAULT_W, h = el.height || TEXT_DEFAULT_H;
+  const cx = el.x + w / 2, cy = el.y + h / 2;
+  return rectEdgePointFromCenter(cx, cy, w / 2, h / 2, otherWorld);
 }
 
 function connectorEndpointWorldRaw(ref) {
