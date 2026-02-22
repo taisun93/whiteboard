@@ -101,7 +101,13 @@ function parseHex(str) {
 }
 
 let currentBoardId = null;
+let currentBoardName = null;
 let multiBoardMode = false;
+
+function updateBoardTitle() {
+  const el = document.getElementById('app-title');
+  if (el) el.textContent = (multiBoardMode && currentBoardName) ? currentBoardName : 'Whiteboard';
+}
 
 const KEEPALIVE_INTERVAL_MS = 12000;
 let keepaliveTimerId = null;
@@ -134,6 +140,8 @@ function connect(boardId) {
     if (ev.code === 4003 && currentBoardId) {
       try { sessionStorage.removeItem('whiteboardId'); } catch (_) {}
       currentBoardId = null;
+      currentBoardName = null;
+      updateBoardTitle();
       if (multiBoardMode && typeof showBoardPicker === 'function') showBoardPicker();
     } else {
       const delay = Math.min(2000 * Math.pow(2, (window._reconnectAttempts || 0)), 30000);
@@ -734,6 +742,32 @@ function draw() {
       ctx.stroke();
       return;
     }
+    if (s.shape === 'diamond' && s.points && s.points.length >= 2) {
+      const a = worldToCanvas(s.points[0].x, s.points[0].y);
+      const b = worldToCanvas(s.points[1].x, s.points[1].y);
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+      const cx = x + w / 2, cy = y + h / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, y);
+      ctx.lineTo(x + w, cy);
+      ctx.lineTo(cx, y + h);
+      ctx.lineTo(x, cy);
+      ctx.closePath();
+      ctx.stroke();
+      return;
+    }
+    if (s.shape === 'roundedRect' && s.points && s.points.length >= 2) {
+      const a = worldToCanvas(s.points[0].x, s.points[0].y);
+      const b = worldToCanvas(s.points[1].x, s.points[1].y);
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+      const rad = Math.min(12, w / 4, h / 4);
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, rad);
+      ctx.stroke();
+      return;
+    }
     if (!s.points || s.points.length < 2) return;
     const p0 = worldToCanvas(s.points[0].x, s.points[0].y);
     ctx.beginPath();
@@ -747,7 +781,7 @@ function draw() {
 
   if (tool === 'move') {
     strokes.forEach((s) => {
-      if ((s.shape === 'rect' || s.shape === 'circle') && s.points && s.points.length >= 2) {
+      if ((s.shape === 'rect' || s.shape === 'circle' || s.shape === 'diamond' || s.shape === 'roundedRect') && s.points && s.points.length >= 2) {
         const p = worldToCanvas(s.points[1].x, s.points[1].y);
         const r = Math.max(4, RESIZE_HANDLE_RADIUS * zoom);
         ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
@@ -858,6 +892,28 @@ function draw() {
       ctx.beginPath();
       ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (s.shape === 'diamond' && s.points && s.points.length >= 2) {
+      const a = worldToCanvas(s.points[0].x, s.points[0].y);
+      const b = worldToCanvas(s.points[1].x, s.points[1].y);
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+      const cx = x + w / 2, cy = y + h / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx, y);
+      ctx.lineTo(x + w, cy);
+      ctx.lineTo(cx, y + h);
+      ctx.lineTo(x, cy);
+      ctx.closePath();
+      ctx.stroke();
+    } else if (s.shape === 'roundedRect' && s.points && s.points.length >= 2) {
+      const a = worldToCanvas(s.points[0].x, s.points[0].y);
+      const b = worldToCanvas(s.points[1].x, s.points[1].y);
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+      const rad = Math.min(12, w / 4, h / 4);
+      ctx.beginPath();
+      ctx.roundRect(x, y, w, h, rad);
+      ctx.stroke();
     } else if (s.points && s.points.length >= 2) {
       const p0 = worldToCanvas(s.points[0].x, s.points[0].y);
       ctx.beginPath();
@@ -946,7 +1002,7 @@ function clampPointToVisible(x, y) {
 function clampShapeToVisible(points, shape) {
   if (!points || points.length < 2) return;
   const b = getVisibleWorldBounds();
-  if (shape === 'rect' || shape === 'circle') {
+  if (['rect', 'circle', 'diamond', 'roundedRect'].includes(shape)) {
     const x1 = Math.min(points[0].x, points[1].x), x2 = Math.max(points[0].x, points[1].x);
     const y1 = Math.min(points[0].y, points[1].y), y2 = Math.max(points[0].y, points[1].y);
     const w = x2 - x1, h = y2 - y1;
@@ -1008,7 +1064,7 @@ function fitViewToBounds(minX, minY, maxX, maxY) {
 
 function strokeCenterWorld(s) {
   if (!s || !s.points || s.points.length === 0) return null;
-  if (s.shape === 'rect' || s.shape === 'circle') {
+  if (['rect', 'circle', 'diamond', 'roundedRect'].includes(s.shape)) {
     const p1 = s.points[0], p2 = s.points[1];
     return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
   }
@@ -1096,6 +1152,47 @@ function strokeEdgePoint(stroke, otherWorld) {
     return { x: cx + t * dx, y: cy + t * dy };
   }
 
+  if (stroke.shape === 'diamond') {
+    const halfW = (x2 - x1) / 2, halfH = (y2 - y1) / 2;
+    const verts = [
+      { x: cx, y: y1 },
+      { x: x2, y: cy },
+      { x: cx, y: y2 },
+      { x: x1, y: cy }
+    ];
+    let bestT = Infinity;
+    for (let i = 0; i < 4; i++) {
+      const va = verts[i];
+      const vb = verts[(i + 1) % 4];
+      const ex = vb.x - va.x, ey = vb.y - va.y;
+      const den = ex * dy - ey * dx;
+      if (Math.abs(den) < 1e-9) continue;
+      const t = ((va.x - cx) * dy - (va.y - cy) * dx) / den;
+      const u = ((va.x - cx) * ey - (va.y - cy) * ex) / den;
+      if (t > 0 && u >= 0 && u <= 1) bestT = Math.min(bestT, t);
+    }
+    if (bestT === Infinity) return { x: cx, y: cy };
+    return { x: cx + bestT * dx, y: cy + bestT * dy };
+  }
+
+  if (stroke.shape === 'roundedRect') {
+    let bestT = Infinity;
+    if (dx !== 0) {
+      let t = (x1 - cx) / dx;
+      if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
+      t = (x2 - cx) / dx;
+      if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
+    }
+    if (dy !== 0) {
+      let t = (y1 - cy) / dy;
+      if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
+      t = (y2 - cy) / dy;
+      if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
+    }
+    if (bestT === Infinity) return { x: cx, y: cy };
+    return { x: cx + bestT * dx, y: cy + bestT * dy };
+  }
+
   return strokeCenterWorld(stroke);
 }
 
@@ -1170,7 +1267,7 @@ function connectorEndpointWorld(ref, otherRef) {
   if (ref.type === 'stroke') {
     const s = strokes.find((x) => x.strokeId === ref.strokeId);
     if (!s) return null;
-    if (otherRef && (s.shape === 'rect' || s.shape === 'circle')) {
+    if (otherRef && (s.shape === 'rect' || s.shape === 'circle' || s.shape === 'diamond' || s.shape === 'roundedRect')) {
       const otherWorld = connectorEndpointWorldRaw(otherRef);
       if (otherWorld) return strokeEdgePoint(s, otherWorld);
     }
@@ -1247,6 +1344,34 @@ function pointInEllipse(px, py, p1, p2) {
   return ((px - cx) * (px - cx)) / (rx * rx) + ((py - cy) * (py - cy)) / (ry * ry) <= 1;
 }
 
+function pointInDiamond(px, py, p1, p2) {
+  const x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x);
+  const y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
+  const cx = (x1 + x2) / 2, cy = (y1 + y2) / 2;
+  const cross = (ax, ay, bx, by) => ax * by - ay * bx;
+  const v0x = x2 - cx, v0y = cy - y1;
+  const v1x = cx - x2, v1y = y2 - cy;
+  const v2x = x1 - cx, v2y = cy - y2;
+  const v3x = cx - x1, v3y = y1 - cy;
+  const s0 = cross(px - cx, py - y1, v0x, v0y) >= 0;
+  const s1 = cross(px - x2, py - cy, v1x, v1y) >= 0;
+  const s2 = cross(px - cx, py - y2, v2x, v2y) >= 0;
+  const s3 = cross(px - x1, py - cy, v3x, v3y) >= 0;
+  return s0 && s1 && s2 && s3;
+}
+
+function pointInRoundedRect(px, py, p1, p2, radius = 12) {
+  const x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x);
+  const y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
+  const w = x2 - x1, h = y2 - y1;
+  const r = Math.min(radius, w / 2, h / 2);
+  if (px < x1 + r && py < y1 + r) return (px - (x1 + r)) ** 2 + (py - (y1 + r)) ** 2 <= r * r;
+  if (px > x2 - r && py < y1 + r) return (px - (x2 - r)) ** 2 + (py - (y1 + r)) ** 2 <= r * r;
+  if (px > x2 - r && py > y2 - r) return (px - (x2 - r)) ** 2 + (py - (y2 - r)) ** 2 <= r * r;
+  if (px < x1 + r && py > y2 - r) return (px - (x1 + r)) ** 2 + (py - (y2 - r)) ** 2 <= r * r;
+  return px >= x1 && px <= x2 && py >= y1 && py <= y2;
+}
+
 function getStrokesHitByPoint(px, py, radius) {
   const r = radius ?? ERASER_RADIUS;
   const hit = new Set();
@@ -1258,6 +1383,14 @@ function getStrokesHitByPoint(px, py, radius) {
     }
     if (shape === 'circle') {
       if (pointInEllipse(px, py, points[0], points[1])) hit.add(strokeId);
+      return;
+    }
+    if (shape === 'diamond') {
+      if (pointInDiamond(px, py, points[0], points[1])) hit.add(strokeId);
+      return;
+    }
+    if (shape === 'roundedRect') {
+      if (pointInRoundedRect(px, py, points[0], points[1])) hit.add(strokeId);
       return;
     }
     for (let i = 0; i < points.length - 1; i++) {
@@ -1341,7 +1474,7 @@ function getObjectsInRect(minX, minY, maxX, maxY) {
     if (s.x + (s.width || 0) >= minX && s.x <= maxX && s.y + (s.height || 0) >= minY && s.y <= maxY) stickiesIn.push(s.id);
   });
   strokes.forEach((s) => {
-    if (s.shape === 'rect' || s.shape === 'circle') {
+    if (['rect', 'circle', 'diamond', 'roundedRect'].includes(s.shape)) {
       if (s.points && s.points.length >= 2) {
         const x1 = Math.min(s.points[0].x, s.points[1].x), x2 = Math.max(s.points[0].x, s.points[1].x);
         const y1 = Math.min(s.points[0].y, s.points[1].y), y2 = Math.max(s.points[0].y, s.points[1].y);
@@ -1515,7 +1648,7 @@ function getShapeResizeHandleAtPoint(px, py) {
   let found = null;
   let topSeq = -1;
   strokes.forEach((s) => {
-    if ((s.shape !== 'rect' && s.shape !== 'circle') || !s.points || s.points.length < 2) return;
+    if ((s.shape !== 'rect' && s.shape !== 'circle' && s.shape !== 'diamond' && s.shape !== 'roundedRect') || !s.points || s.points.length < 2) return;
     const p1 = s.points[1];
     if (Math.hypot(px - p1.x, py - p1.y) <= RESIZE_HANDLE_RADIUS && s.seq != null && s.seq > topSeq) {
       found = s.strokeId;
@@ -2254,7 +2387,7 @@ function resizeObject(objectId, width, height) {
     return true;
   }
   const stroke = strokes.find((o) => o.strokeId === objectId);
-  if (stroke && (stroke.shape === 'rect' || stroke.shape === 'circle') && stroke.points && stroke.points.length >= 2) {
+  if (stroke && ['rect', 'circle', 'diamond', 'roundedRect'].includes(stroke.shape) && stroke.points && stroke.points.length >= 2) {
     const p0 = stroke.points[0];
     const points = [p0, { x: p0.x + width, y: p0.y + height }];
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STROKE_POINTS', strokeId: objectId, points }));
@@ -2410,6 +2543,8 @@ function showBoardPicker(list) {
     btn.textContent = b.name || 'Untitled';
     btn.addEventListener('click', () => {
       currentBoardId = b.id;
+      currentBoardName = b.name || 'Untitled';
+      updateBoardTitle();
       try { sessionStorage.setItem('whiteboardId', b.id); } catch (_) {}
       picker.classList.add('hidden');
       const sw = document.getElementById('switch-board-btn');
@@ -2438,6 +2573,8 @@ function showBoardPicker(list) {
       .then((data) => {
         if (!data || !data.id) return;
         currentBoardId = data.id;
+        currentBoardName = (data.name || name) || 'Untitled';
+        updateBoardTitle();
         try { sessionStorage.setItem('whiteboardId', data.id); } catch (_) {}
         picker.classList.add('hidden');
         const sw = document.getElementById('switch-board-btn');
@@ -2473,7 +2610,10 @@ function showBoardPicker(list) {
           const list = wb.whiteboards || [];
           const saved = (function () { try { return sessionStorage.getItem('whiteboardId'); } catch (_) { return null; } })();
           if (saved && list.some((b) => b.id === saved)) {
+            const board = list.find((b) => b.id === saved);
             currentBoardId = saved;
+            currentBoardName = board ? (board.name || 'Untitled') : 'Untitled';
+            updateBoardTitle();
             connect(saved);
             draw();
             applyToolUI();
@@ -2496,6 +2636,8 @@ function showBoardPicker(list) {
       if (!multiBoardMode) return;
       if (ws) { ws.close(); ws = null; }
       currentBoardId = null;
+      currentBoardName = null;
+      updateBoardTitle();
       try { sessionStorage.removeItem('whiteboardId'); } catch (_) {}
       fetchWithTimeout('/api/whiteboards', { credentials: 'include' }, 15000)
         .then((r) => r.json())

@@ -34,18 +34,25 @@
     #tool-menu button.tool-btn:hover { background: #e2e8f0; color: #1e293b; }
     #tool-menu button.tool-btn.active { background: #3b82f6; color: #fff; }
     #tool-menu button.tool-btn svg { width: 22px; height: 22px; display: block; }
-    #tool-menu .color-section { margin-top: 4px; padding-top: 6px; border-top: 1px solid #e2e8f0; display: flex; flex-direction: column; align-items: center; gap: 6px; }
-    #tool-menu .color-current { width: 32px; height: 32px; border: 2px solid #000; border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.3); }
-    #tool-menu .color-current:hover { border-color: #334155; }
-    #tool-menu .color-expanded { display: none; flex-direction: column; align-items: center; gap: 6px; border: 1px solid #000; border-radius: 8px; padding: 6px; margin-top: 4px; }
-    #tool-menu .color-section.expanded .color-expanded { display: flex; }
-    #tool-menu .color-swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 48px; }
-    #tool-menu .color-swatch { width: 18px; height: 18px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; flex-shrink: 0; }
-    #tool-menu .color-swatch:hover { border-color: #94a3b8; }
-    #tool-menu .color-swatch.active { border-color: #1e293b; box-shadow: 0 0 0 1px #f8fafc; }
-    #tool-menu .color-hex { width: 40px; padding: 4px 6px; font-size: 10px; font-family: monospace; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; color: #334155; text-align: center; }
-    #tool-menu .color-hex:focus { outline: none; border-color: #3b82f6; }
-    #tool-menu .color-hex::placeholder { color: #94a3b8; }
+    #color-section {
+      flex-shrink: 0; width: 48px; margin: 12px 0 12px 4px; align-self: flex-start;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 8px 0;
+      background: #f8fafc; border-radius: 14px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.06);
+      z-index: 20;
+    }
+    #color-section .color-current { width: 32px; height: 32px; border: 2px solid #000; border-radius: 8px; cursor: pointer; padding: 0; flex-shrink: 0; box-shadow: 0 0 0 1px rgba(255,255,255,0.3); }
+    #color-section .color-current:hover { border-color: #334155; }
+    #color-section .color-expanded { display: none; flex-direction: column; align-items: center; gap: 6px; border: 1px solid #000; border-radius: 8px; padding: 6px; margin-top: 4px; }
+    #color-section.expanded .color-expanded { display: flex; }
+    #color-section .color-swatches { display: flex; flex-wrap: wrap; justify-content: center; gap: 3px; max-width: 48px; }
+    #color-section .color-swatch { width: 18px; height: 18px; border: 2px solid transparent; border-radius: 4px; cursor: pointer; padding: 0; flex-shrink: 0; }
+    #color-section .color-swatch:hover { border-color: #94a3b8; }
+    #color-section .color-swatch.active { border-color: #1e293b; box-shadow: 0 0 0 1px #f8fafc; }
+    #color-section .color-hex { width: 40px; padding: 4px 6px; font-size: 10px; font-family: monospace; background: #fff; border: 1px solid #e2e8f0; border-radius: 6px; color: #334155; text-align: center; }
+    #color-section .color-hex:focus { outline: none; border-color: #3b82f6; }
+    #color-section .color-hex::placeholder { color: #94a3b8; }
     #board-inner {
       flex: 1; position: relative; min-height: 0; min-width: 0; display: flex; overflow: hidden;
       background: #0f0f1a;
@@ -191,15 +198,14 @@
         <button type="button" id="tool-circle" class="tool-btn" title="Circle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/></svg></button>
         <button type="button" id="tool-arrow" class="tool-btn" title="Arrow / Connector"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg></button>
       </div>
-      <hr class="palette-sep" aria-hidden="true" />
-      <div class="color-section" id="color-section">
-        <button type="button" id="color-current" class="color-current" title="Click to change color" aria-label="Current color; click to change"></button>
-        <div class="color-expanded">
-          <div id="color-swatches" class="color-swatches"></div>
-          <input type="text" id="color-hex" class="color-hex" placeholder="#" maxlength="7" title="Hex color" aria-label="Hex color" />
-        </div>
-      </div>
     </nav>
+    <div id="color-section" class="color-panel" aria-label="Color">
+      <button type="button" id="color-current" class="color-current" title="Click to change color" aria-label="Current color; click to change"></button>
+      <div class="color-expanded">
+        <div id="color-swatches" class="color-swatches"></div>
+        <input type="text" id="color-hex" class="color-hex" placeholder="#" maxlength="7" title="Hex color" aria-label="Hex color" />
+      </div>
+    </div>
       <div id="board-inner">
         <canvas id="c" width="800" height="500"></canvas>
         <div id="stickies-layer"></div>

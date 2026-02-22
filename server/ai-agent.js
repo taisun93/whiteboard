@@ -29,14 +29,27 @@ const tools = [
   }),
   new DynamicStructuredTool({
     name: 'createShape',
-    description: 'Create a rectangle or circle shape on the board.',
+    description: 'Create a shape on the board. Use rect for process steps, diamond for decisions, roundedRect for start/end in flowcharts.',
     schema: z.object({
-      type: z.enum(['rect', 'circle']).describe('Shape type'),
+      type: z.enum(['rect', 'circle', 'diamond', 'roundedRect']).describe('Shape type: rect, circle, diamond (decision), roundedRect (start/end)'),
       x: z.number(),
       y: z.number(),
       width: z.number().describe('Width of the shape'),
       height: z.number().describe('Height of the shape'),
       color: z.string().optional()
+    }),
+    func: async () => 'Tool will be executed by server.'
+  }),
+  new DynamicStructuredTool({
+    name: 'createFlowchartNode',
+    description: 'Create a single flowchart node with a label. Use for process steps, decisions, start/end. Creates the shape and centered text. Then use createConnector to link nodes (use strokeId or text element id from getBoardState).',
+    schema: z.object({
+      type: z.enum(['process', 'decision', 'start', 'end']).describe('process=rectangle, decision=diamond, start/end=rounded rectangle'),
+      text: z.string().describe('Label inside the node (e.g. "Start", "Is valid?", "Do thing")'),
+      x: z.number().describe('X position (world coordinates)'),
+      y: z.number().describe('Y position (world coordinates)'),
+      width: z.number().optional().describe('Width of node (default 120)'),
+      height: z.number().optional().describe('Height of node (default 60)')
     }),
     func: async () => 'Tool will be executed by server.'
   }),
@@ -145,6 +158,8 @@ Avoiding overlap: When creating new elements (stickies, frames, shapes, text), a
 Templates and multi-item layouts:
 - When the user asks for a "SWOT analysis", "four quadrants", "2x2 matrix", "quadrant template", or similar, use createQuadrantTemplate exactly once with four titles. For SWOT use: title1="Strengths", title2="Weaknesses", title3="Opportunities", title4="Threats" (in that order). Use a single createQuadrantTemplate call; do not create four separate frames.
 - When the user asks for a "template" with multiple sections, quadrants, or a matrix, prefer createQuadrantTemplate if there are four sections; otherwise create the right number of frames or stickies with createFrame/createStickyNote, spaced in a clear grid (e.g. 20-30 units apart).
+
+Flowcharts: When the user asks for a flowchart, diagram, or process flow, use createFlowchartNode for each node (process, decision, start, end) with clear labels. Space nodes so they do not overlap (e.g. process nodes in a column ~150–200 units apart, decisions in a row or column). Then use createConnector to link nodes: fromId and toId can be the strokeId of a flowchart shape or the id of the text element inside it (from getBoardState). Create nodes first, then connect them in logical order.
 
 If the user asks to move, resize, update, or connect something, call getBoardState first to see current objects and their IDs, then call the appropriate mutation tool. When you receive the result of getBoardState, use the exact IDs from that data. For createConnector, fromId and toId can be: a sticky id, a text element id, a stroke id, or a point as "x,y" (e.g. "100,200"). After each command the app automatically zooms so all elements are visible; you may still use centerView(x, y, zoom?) to focus the user on a specific area. Reply briefly to the user after you are done.`;
 

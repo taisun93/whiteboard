@@ -516,7 +516,7 @@ wss.on('connection', async (ws, req) => {
       if (!Array.isArray(msg.points) || !msg.strokeId) return;
       const seq = state.nextSeq++;
       const color = typeof msg.color === 'string' ? msg.color : '#e2e8f0';
-      const shape = msg.shape === 'rect' || msg.shape === 'circle' ? msg.shape : undefined;
+      const shape = ['rect', 'circle', 'diamond', 'roundedRect'].includes(msg.shape) ? msg.shape : undefined;
       const stroke = { seq, strokeId: msg.strokeId, points: msg.points, color };
       if (shape) stroke.shape = shape;
       state.strokes.push(stroke);
@@ -830,7 +830,8 @@ function executeTool(name, args, state, boardId) {
     case 'createShape': {
       const { type = 'rect', x, y, width = 100, height = 80, color = '#e2e8f0' } = args;
       if (typeof x !== 'number' || typeof y !== 'number') return;
-      const shape = type === 'circle' ? 'circle' : 'rect';
+      const allowed = ['rect', 'circle', 'diamond', 'roundedRect'];
+      const shape = allowed.includes(type) ? type : 'rect';
       const strokeId = id();
       const points = [{ x, y }, { x: x + width, y: y + height }];
       const seq = state.nextSeq++;
@@ -883,6 +884,26 @@ function executeTool(name, args, state, boardId) {
       broadcastToBoard(boardId, { type: 'CONNECTOR_ADDED', connector });
       break;
     }
+    case 'createFlowchartNode': {
+      const { type = 'process', text = '', x, y, width = 120, height = 60 } = args;
+      if (typeof x !== 'number' || typeof y !== 'number') return;
+      const shapeMap = { process: 'rect', decision: 'diamond', start: 'roundedRect', end: 'roundedRect' };
+      const shape = shapeMap[type] || 'rect';
+      const strokeId = id();
+      const points = [{ x, y }, { x: x + width, y: y + height }];
+      const seq = state.nextSeq++;
+      const stroke = { seq, strokeId, points, color: '#e2e8f0', shape };
+      state.strokes.push(stroke);
+      broadcastToBoard(boardId, { type: 'STROKE_ADDED', stroke });
+      const tid = id();
+      const tx = x + width / 2 - (TEXT_DEFAULT_W / 2);
+      const ty = y + height / 2 - (TEXT_DEFAULT_H / 2);
+      const textEl = { id: tid, x: tx, y: ty, text: String(text), color: '#e2e8f0', width: TEXT_DEFAULT_W, height: TEXT_DEFAULT_H };
+      state.textElements.push(textEl);
+      broadcastToBoard(boardId, { type: 'TEXT_ADDED', textElement: textEl });
+      persistBoard(boardId);
+      break;
+    }
     case 'moveObject': {
       const { objectId, x, y } = args;
       if (typeof x !== 'number' || typeof y !== 'number') return;
@@ -909,10 +930,11 @@ function executeTool(name, args, state, boardId) {
       }
       const stroke = state.strokes.find((o) => o.strokeId === objectId);
       if (stroke && stroke.points) {
-        const cx = stroke.shape === 'rect' || stroke.shape === 'circle'
+        const isBboxShape = ['rect', 'circle', 'diamond', 'roundedRect'].includes(stroke.shape);
+        const cx = isBboxShape
           ? (stroke.points[0].x + stroke.points[1].x) / 2
           : stroke.points.reduce((a, p) => a + p.x, 0) / stroke.points.length;
-        const cy = stroke.shape === 'rect' || stroke.shape === 'circle'
+        const cy = isBboxShape
           ? (stroke.points[0].y + stroke.points[1].y) / 2
           : stroke.points.reduce((a, p) => a + p.y, 0) / stroke.points.length;
         const dx = x - cx, dy = y - cy;
@@ -946,7 +968,7 @@ function executeTool(name, args, state, boardId) {
         break;
       }
       const str = state.strokes.find((o) => o.strokeId === objectId);
-      if (str && (str.shape === 'rect' || str.shape === 'circle') && str.points && str.points.length >= 2) {
+      if (str && ['rect', 'circle', 'diamond', 'roundedRect'].includes(str.shape) && str.points && str.points.length >= 2) {
         const p0 = str.points[0];
         str.points[1] = { x: p0.x + width, y: p0.y + height };
         persistBoard(boardId);
