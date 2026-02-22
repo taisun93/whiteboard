@@ -109,6 +109,11 @@ async function setSession(sessionId, data) {
   );
 }
 
+async function updateSessionUserId(sessionId, userId) {
+  if (!pool || !sessionId) return;
+  await pool.query('UPDATE sessions SET user_id = $1 WHERE session_id = $2', [userId, sessionId]);
+}
+
 async function deleteSession(sessionId) {
   if (!sessionId) return;
   if (!pool) {
@@ -217,6 +222,7 @@ module.exports = {
   hasDatabase,
   getSession,
   setSession,
+  updateSessionUserId,
   deleteSession,
   getOrCreateUserByGoogleId,
   listWhiteboardsForUser,

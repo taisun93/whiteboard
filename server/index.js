@@ -188,12 +188,24 @@ app.post('/api/logout', async (req, res) => {
   res.json({ ok: true });
 });
 
+async function ensureSessionUserId(sessionId, session) {
+  if (!session || session.userId) return session;
+  if (!session.googleId || !db.hasDatabase()) return session;
+  const userId = await db.getOrCreateUserByGoogleId(session.googleId, session.email, session.name);
+  if (userId) {
+    await db.updateSessionUserId(sessionId, userId);
+    session.userId = userId;
+  }
+  return session;
+}
+
 app.get('/api/whiteboards', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
-  const session = cookies.session ? await db.getSession(cookies.session) : null;
-  if (!session || !session.userId) {
-    return res.status(401).json({ error: 'Not logged in' });
-  }
+  const sessionId = cookies.session;
+  let session = sessionId ? await db.getSession(sessionId) : null;
+  if (!session) return res.status(401).json({ error: 'Not logged in' });
+  session = await ensureSessionUserId(sessionId, session);
+  if (!session.userId) return res.status(401).json({ error: 'Not logged in' });
   try {
     const list = await db.listWhiteboardsForUser(session.userId);
     res.json({ whiteboards: list });
@@ -205,10 +217,11 @@ app.get('/api/whiteboards', async (req, res) => {
 
 app.post('/api/whiteboards', async (req, res) => {
   const cookies = parseCookie(req.headers.cookie);
-  const session = cookies.session ? await db.getSession(cookies.session) : null;
-  if (!session || !session.userId) {
-    return res.status(401).json({ error: 'Not logged in' });
-  }
+  const sessionId = cookies.session;
+  let session = sessionId ? await db.getSession(sessionId) : null;
+  if (!session) return res.status(401).json({ error: 'Not logged in' });
+  session = await ensureSessionUserId(sessionId, session);
+  if (!session.userId) return res.status(401).json({ error: 'Not logged in' });
   const name = (req.body && req.body.name) ? String(req.body.name).trim() || 'Untitled' : 'Untitled';
   try {
     const board = await db.createWhiteboard(session.userId, name);
@@ -332,7 +345,9 @@ function parseBoardIdFromUrl(url) {
 
 wss.on('connection', async (ws, req) => {
   const cookies = parseCookie(req.headers.cookie);
-  const session = cookies.session ? await db.getSession(cookies.session) : null;
+  const sessionId = cookies.session;
+  let session = sessionId ? await db.getSession(sessionId) : null;
+  session = session ? await ensureSessionUserId(sessionId, session) : null;
   ws.username = session ? session.name : 'anonymous';
 
   let boardId = parseBoardIdFromUrl(req.url);
