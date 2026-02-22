@@ -17,6 +17,8 @@ const connectors = [];
 const textElements = [];
 // Frames: { id, x, y, width, height, title? }
 const frames = [];
+/** Shapes with a bbox that support edge snapping for connectors (rect, circle, diamond = rotated square, roundedRect). */
+const BOX_SHAPES = ['rect', 'circle', 'diamond', 'roundedRect'];
 // Selection (sets of ids)
 const selectedStickyIds = new Set();
 const selectedStrokeIds = new Set();
@@ -824,7 +826,7 @@ function draw() {
 
   if (tool === 'move') {
     strokes.forEach((s) => {
-      if ((s.shape === 'rect' || s.shape === 'circle' || s.shape === 'diamond' || s.shape === 'roundedRect') && s.points && s.points.length >= 2) {
+      if (BOX_SHAPES.includes(s.shape) && s.points && s.points.length >= 2) {
         const p = worldToCanvas(s.points[1].x, s.points[1].y);
         const r = Math.max(4, RESIZE_HANDLE_RADIUS * zoom);
         ctx.fillStyle = 'rgba(59, 130, 246, 0.9)';
@@ -1071,7 +1073,7 @@ function clampPointToVisible(x, y) {
 function clampShapeToVisible(points, shape) {
   if (!points || points.length < 2) return;
   const b = getVisibleWorldBounds();
-  if (['rect', 'circle', 'diamond', 'roundedRect'].includes(shape)) {
+  if (BOX_SHAPES.includes(shape)) {
     const x1 = Math.min(points[0].x, points[1].x), x2 = Math.max(points[0].x, points[1].x);
     const y1 = Math.min(points[0].y, points[1].y), y2 = Math.max(points[0].y, points[1].y);
     const w = x2 - x1, h = y2 - y1;
@@ -1133,7 +1135,7 @@ function fitViewToBounds(minX, minY, maxX, maxY) {
 
 function strokeCenterWorld(s) {
   if (!s || !s.points || s.points.length === 0) return null;
-  if (['rect', 'circle', 'diamond', 'roundedRect'].includes(s.shape)) {
+  if (BOX_SHAPES.includes(s.shape)) {
     const p1 = s.points[0], p2 = s.points[1];
     return { x: (p1.x + p2.x) / 2, y: (p1.y + p2.y) / 2 };
   }
@@ -1184,84 +1186,67 @@ function stickyEdgePoint(sticky, otherWorld) {
   return { x: cx + bestT * dx, y: cy + bestT * dy };
 }
 
+/** Ray from (cx,cy) toward otherWorld hits axis-aligned rect [cx-halfW, cx+halfW] x [cy-halfH, cy+halfH]. */
+function rectEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld) {
+  let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return { x: cx, y: cy };
+  dx /= len;
+  dy /= len;
+  let bestT = Infinity;
+  if (dx !== 0) {
+    let t = (-halfW - 0) / dx;
+    if (t > 0) { const y = dy * t; if (y >= -halfH && y <= halfH) bestT = Math.min(bestT, t); }
+    t = (halfW - 0) / dx;
+    if (t > 0) { const y = dy * t; if (y >= -halfH && y <= halfH) bestT = Math.min(bestT, t); }
+  }
+  if (dy !== 0) {
+    let t = (-halfH - 0) / dy;
+    if (t > 0) { const x = dx * t; if (x >= -halfW && x <= halfW) bestT = Math.min(bestT, t); }
+    t = (halfH - 0) / dy;
+    if (t > 0) { const x = dx * t; if (x >= -halfW && x <= halfW) bestT = Math.min(bestT, t); }
+  }
+  if (bestT === Infinity) return { x: cx, y: cy };
+  return { x: cx + bestT * dx, y: cy + bestT * dy };
+}
+
+/** Diamond = rotated square (L1 ball). Ray from center hits |u|/halfW + |v|/halfH = 1. */
+function diamondEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld) {
+  let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
+  const len = Math.hypot(dx, dy);
+  if (len < 1e-6) return { x: cx, y: cy };
+  dx /= len;
+  dy /= len;
+  if (halfW < 1e-6 || halfH < 1e-6) return { x: cx, y: cy };
+  const t = 1 / (Math.abs(dx) / halfW + Math.abs(dy) / halfH);
+  return { x: cx + t * dx, y: cy + t * dy };
+}
+
 function strokeEdgePoint(stroke, otherWorld) {
   if (!stroke || !stroke.points || stroke.points.length < 2) return strokeCenterWorld(stroke);
   const p1 = stroke.points[0], p2 = stroke.points[1];
   const x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x);
   const y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
   const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
-  let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
-  const len = Math.hypot(dx, dy);
-  if (len < 1e-6) return { x: cx, y: cy };
-  dx /= len;
-  dy /= len;
+  const halfW = (x2 - x1) / 2, halfH = (y2 - y1) / 2;
 
-  if (stroke.shape === 'rect') {
-    let bestT = Infinity;
-    if (dx !== 0) {
-      let t = (x1 - cx) / dx;
-      if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
-      t = (x2 - cx) / dx;
-      if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
-    }
-    if (dy !== 0) {
-      let t = (y1 - cy) / dy;
-      if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
-      t = (y2 - cy) / dy;
-      if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
-    }
-    if (bestT === Infinity) return { x: cx, y: cy };
-    return { x: cx + bestT * dx, y: cy + bestT * dy };
+  if (stroke.shape === 'rect' || stroke.shape === 'roundedRect') {
+    return rectEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld);
   }
-
+  if (stroke.shape === 'diamond') {
+    return diamondEdgePointFromCenter(cx, cy, halfW, halfH, otherWorld);
+  }
   if (stroke.shape === 'circle') {
-    const rx = Math.abs(p2.x - p1.x) / 2, ry = Math.abs(p2.y - p1.y) / 2;
+    const rx = halfW, ry = halfH;
     if (rx < 1e-6 || ry < 1e-6) return { x: cx, y: cy };
+    let dx = otherWorld.x - cx, dy = otherWorld.y - cy;
+    const len = Math.hypot(dx, dy);
+    if (len < 1e-6) return { x: cx, y: cy };
+    dx /= len;
+    dy /= len;
     const t = 1 / Math.sqrt((dx * dx) / (rx * rx) + (dy * dy) / (ry * ry));
     return { x: cx + t * dx, y: cy + t * dy };
   }
-
-  if (stroke.shape === 'diamond') {
-    const halfW = (x2 - x1) / 2, halfH = (y2 - y1) / 2;
-    const verts = [
-      { x: cx, y: y1 },
-      { x: x2, y: cy },
-      { x: cx, y: y2 },
-      { x: x1, y: cy }
-    ];
-    let bestT = Infinity;
-    for (let i = 0; i < 4; i++) {
-      const va = verts[i];
-      const vb = verts[(i + 1) % 4];
-      const ex = vb.x - va.x, ey = vb.y - va.y;
-      const den = ex * dy - ey * dx;
-      if (Math.abs(den) < 1e-9) continue;
-      const t = ((va.x - cx) * dy - (va.y - cy) * dx) / den;
-      const u = ((va.x - cx) * ey - (va.y - cy) * ex) / den;
-      if (t > 0 && u >= 0 && u <= 1) bestT = Math.min(bestT, t);
-    }
-    if (bestT === Infinity) return { x: cx, y: cy };
-    return { x: cx + bestT * dx, y: cy + bestT * dy };
-  }
-
-  if (stroke.shape === 'roundedRect') {
-    let bestT = Infinity;
-    if (dx !== 0) {
-      let t = (x1 - cx) / dx;
-      if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
-      t = (x2 - cx) / dx;
-      if (t > 0) { const y = cy + t * dy; if (y >= y1 && y <= y2) bestT = Math.min(bestT, t); }
-    }
-    if (dy !== 0) {
-      let t = (y1 - cy) / dy;
-      if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
-      t = (y2 - cy) / dy;
-      if (t > 0) { const x = cx + t * dx; if (x >= x1 && x <= x2) bestT = Math.min(bestT, t); }
-    }
-    if (bestT === Infinity) return { x: cx, y: cy };
-    return { x: cx + bestT * dx, y: cy + bestT * dy };
-  }
-
   return strokeCenterWorld(stroke);
 }
 
@@ -1336,7 +1321,7 @@ function connectorEndpointWorld(ref, otherRef) {
   if (ref.type === 'stroke') {
     const s = strokes.find((x) => x.strokeId === ref.strokeId);
     if (!s) return null;
-    if (otherRef && (s.shape === 'rect' || s.shape === 'circle' || s.shape === 'diamond' || s.shape === 'roundedRect')) {
+    if (otherRef && BOX_SHAPES.includes(s.shape)) {
       const otherWorld = connectorEndpointWorldRaw(otherRef);
       if (otherWorld) return strokeEdgePoint(s, otherWorld);
     }
@@ -1559,7 +1544,7 @@ function getObjectsInRect(minX, minY, maxX, maxY) {
     if (s.x + (s.width || 0) >= minX && s.x <= maxX && s.y + (s.height || 0) >= minY && s.y <= maxY) stickiesIn.push(s.id);
   });
   strokes.forEach((s) => {
-    if (['rect', 'circle', 'diamond', 'roundedRect'].includes(s.shape)) {
+    if (BOX_SHAPES.includes(s.shape)) {
       if (s.points && s.points.length >= 2) {
         const x1 = Math.min(s.points[0].x, s.points[1].x), x2 = Math.max(s.points[0].x, s.points[1].x);
         const y1 = Math.min(s.points[0].y, s.points[1].y), y2 = Math.max(s.points[0].y, s.points[1].y);
@@ -1628,7 +1613,7 @@ function rotateSelection(angleDeg) {
   });
   selectedStrokeIds.forEach((strokeId) => {
     const s = strokes.find((x) => x.strokeId === strokeId);
-    if (s && ['rect', 'circle', 'diamond', 'roundedRect'].includes(s.shape)) {
+    if (s && BOX_SHAPES.includes(s.shape)) {
       const rot = ((s.rotation != null ? s.rotation : 0) + angleDeg) % 360;
       s.rotation = rot;
       ws.send(JSON.stringify({ type: 'SET_STROKE_ROTATION', strokeId, rotation: rot }));
@@ -1774,7 +1759,7 @@ function getShapeResizeHandleAtPoint(px, py) {
   let found = null;
   let topSeq = -1;
   strokes.forEach((s) => {
-    if ((s.shape !== 'rect' && s.shape !== 'circle' && s.shape !== 'diamond' && s.shape !== 'roundedRect') || !s.points || s.points.length < 2) return;
+    if (!BOX_SHAPES.includes(s.shape) || !s.points || s.points.length < 2) return;
     const p1 = s.points[1];
     if (Math.hypot(px - p1.x, py - p1.y) <= RESIZE_HANDLE_RADIUS && s.seq != null && s.seq > topSeq) {
       found = s.strokeId;
@@ -2524,7 +2509,7 @@ function resizeObject(objectId, width, height) {
     return true;
   }
   const stroke = strokes.find((o) => o.strokeId === objectId);
-  if (stroke && ['rect', 'circle', 'diamond', 'roundedRect'].includes(stroke.shape) && stroke.points && stroke.points.length >= 2) {
+  if (stroke && BOX_SHAPES.includes(stroke.shape) && stroke.points && stroke.points.length >= 2) {
     const p0 = stroke.points[0];
     const points = [p0, { x: p0.x + width, y: p0.y + height }];
     if (ws && ws.readyState === 1) ws.send(JSON.stringify({ type: 'UPDATE_STROKE_POINTS', strokeId: objectId, points }));
