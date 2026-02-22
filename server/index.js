@@ -728,6 +728,7 @@ wss.on('connection', async (ws, req) => {
         if (typeof msg.width === 'number' && msg.width >= 60) { f.width = msg.width; updates.width = msg.width; }
         if (typeof msg.height === 'number' && msg.height >= 40) { f.height = msg.height; updates.height = msg.height; }
         if (typeof msg.title === 'string') { f.title = msg.title; updates.title = msg.title; }
+        if (typeof msg.rotation === 'number') { f.rotation = msg.rotation; updates.rotation = msg.rotation; }
         if (Object.keys(updates).length > 0) {
           persistBoard(ws.boardId);
           broadcastToBoard(ws.boardId, { type: 'FRAME_UPDATED', id: msg.id, ...updates });
@@ -781,6 +782,15 @@ wss.on('connection', async (ws, req) => {
         s.points = msg.points.map((p) => ({ x: p.x, y: p.y }));
         persistBoard(ws.boardId);
         broadcastToBoard(ws.boardId, { type: 'STROKE_POINTS_UPDATED', strokeId: msg.strokeId, points: s.points });
+      }
+      return;
+    }
+    if (msg.type === 'SET_STROKE_ROTATION' && msg.strokeId && typeof msg.rotation === 'number') {
+      const s = state.strokes.find((st) => st.strokeId === msg.strokeId);
+      if (s) {
+        s.rotation = msg.rotation;
+        persistBoard(ws.boardId);
+        broadcastToBoard(ws.boardId, { type: 'STROKE_ROTATION_CHANGED', strokeId: msg.strokeId, rotation: msg.rotation });
       }
       return;
     }

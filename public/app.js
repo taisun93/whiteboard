@@ -267,6 +267,12 @@ function connect(boardId) {
         stroke.points = msg.points.map((p) => ({ x: p.x, y: p.y }));
         draw();
       }
+    } else if (msg.type === 'STROKE_ROTATION_CHANGED') {
+      const stroke = strokes.find((s) => s.strokeId === msg.strokeId);
+      if (stroke) {
+        stroke.rotation = msg.rotation;
+        draw();
+      }
     } else if (msg.type === 'CONNECTOR_ADDED') {
       const c = msg.connector;
       if (c && c.id) {
@@ -328,6 +334,7 @@ function connect(boardId) {
         if (msg.width !== undefined) f.width = msg.width;
         if (msg.height !== undefined) f.height = msg.height;
         if (msg.title !== undefined) f.title = msg.title;
+        if (msg.rotation !== undefined) f.rotation = msg.rotation;
         draw();
       }
     } else if (msg.type === 'FRAME_REMOVED') {
@@ -528,6 +535,9 @@ function renderStickies() {
     el.style.top = `${pos.y * scaleY}px`;
     el.style.width = `${w * scaleX}px`;
     el.style.height = `${h * scaleY}px`;
+    const rot = s.rotation != null ? s.rotation : 0;
+    el.style.transformOrigin = '50% 50%';
+    el.style.transform = rot !== 0 ? `rotate(${rot}deg)` : '';
     const body = el.querySelector('.sticky-body');
     const header = el.querySelector('.sticky-header');
     const dispH = h * scaleY;
@@ -662,6 +672,9 @@ function renderTextElements() {
     div.style.top = `${pos.y * scaleY}px`;
     div.style.width = `${w * scaleX}px`;
     div.style.minHeight = `${h * scaleY}px`;
+    const rot = el.rotation != null ? el.rotation : 0;
+    div.style.transformOrigin = '50% 50%';
+    div.style.transform = rot !== 0 ? `rotate(${rot}deg)` : '';
     const dispH = h * scaleY;
     const dispW = w * scaleX;
     const fs = Math.max(2, dispH * 0.5);
@@ -685,22 +698,46 @@ function draw() {
   ctx.lineJoin = 'round';
 
   frames.forEach((f) => {
+    const w = f.width || FRAME_DEFAULT_W, h = f.height || FRAME_DEFAULT_H;
     const a = worldToCanvas(f.x, f.y);
-    const b = worldToCanvas(f.x + (f.width || FRAME_DEFAULT_W), f.y + (f.height || FRAME_DEFAULT_H));
-    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-    const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+    const b = worldToCanvas(f.x + w, f.y + h);
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+    const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
+    const rot = (f.rotation != null ? f.rotation : 0) * (Math.PI / 180);
     ctx.strokeStyle = 'rgba(100, 116, 139, 0.8)';
     ctx.fillStyle = 'rgba(30, 41, 59, 0.25)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, w, h);
-    ctx.fillRect(x, y, w, h);
+    if (rot !== 0) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.translate(-rw / 2, -rh / 2);
+      ctx.strokeRect(0, 0, rw, rh);
+      ctx.fillRect(0, 0, rw, rh);
+      ctx.restore();
+    } else {
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      ctx.strokeRect(x, y, rw, rh);
+      ctx.fillRect(x, y, rw, rh);
+    }
     if (f.title) {
       ctx.fillStyle = 'rgba(148, 163, 184, 0.9)';
-      const titleFontSize = Math.max(6, h * 0.12);
+      const titleFontSize = Math.max(6, rh * 0.12);
       const padH = titleFontSize * 0.7;
       const padV = titleFontSize * 0.5;
-      ctx.font = `bold ${titleFontSize}px system-ui`;
-      ctx.fillText(f.title, x + padH, y + titleFontSize + padV);
+      if (rot !== 0) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.translate(-rw / 2, -rh / 2);
+        ctx.font = `bold ${titleFontSize}px system-ui`;
+        ctx.fillText(f.title, padH, titleFontSize + padV);
+        ctx.restore();
+      } else {
+        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+        ctx.font = `bold ${titleFontSize}px system-ui`;
+        ctx.fillText(f.title, x + padH, y + titleFontSize + padV);
+      }
     }
   });
   if (pendingFrame) {
@@ -719,54 +756,59 @@ function draw() {
 
   strokes.forEach((s) => {
     ctx.strokeStyle = s.color || '#e2e8f0';
+    const rot = (s.rotation != null ? s.rotation : 0) * (Math.PI / 180);
+    const drawShapeAt = (draw) => {
+      if (s.shape && s.points && s.points.length >= 2) {
+        const a = worldToCanvas(s.points[0].x, s.points[0].y);
+        const b = worldToCanvas(s.points[1].x, s.points[1].y);
+        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+        const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+        const cx = x + w / 2, cy = y + h / 2;
+        if (rot !== 0) {
+          ctx.save();
+          ctx.translate(cx, cy);
+          ctx.rotate(rot);
+          ctx.translate(-w / 2, -h / 2);
+          draw(0, 0, w, h);
+          ctx.restore();
+        } else {
+          draw(x, y, w, h);
+        }
+      }
+    };
     if (s.shape === 'rect' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x);
-      const y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x);
-      const h = Math.abs(b.y - a.y);
-      ctx.strokeRect(x, y, w, h);
+      drawShapeAt((x, y, w, h) => { ctx.strokeRect(x, y, w, h); });
       return;
     }
     if (s.shape === 'circle' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x);
-      const y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x);
-      const h = Math.abs(b.y - a.y);
-      const cx = x + w / 2;
-      const cy = y + h / 2;
-      ctx.beginPath();
-      ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
-      ctx.stroke();
+      drawShapeAt((x, y, w, h) => {
+        const cx = x + w / 2, cy = y + h / 2;
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, w / 2, h / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      });
       return;
     }
     if (s.shape === 'diamond' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-      const cx = x + w / 2, cy = y + h / 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, y);
-      ctx.lineTo(x + w, cy);
-      ctx.lineTo(cx, y + h);
-      ctx.lineTo(x, cy);
-      ctx.closePath();
-      ctx.stroke();
+      drawShapeAt((x, y, w, h) => {
+        const cx = x + w / 2, cy = y + h / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, y);
+        ctx.lineTo(x + w, cy);
+        ctx.lineTo(cx, y + h);
+        ctx.lineTo(x, cy);
+        ctx.closePath();
+        ctx.stroke();
+      });
       return;
     }
     if (s.shape === 'roundedRect' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-      const rad = Math.min(12, w / 4, h / 4);
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, rad);
-      ctx.stroke();
+      drawShapeAt((x, y, w, h) => {
+        const rad = Math.min(12, w / 4, h / 4);
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, rad);
+        ctx.stroke();
+      });
       return;
     }
     if (!s.points || s.points.length < 2) return;
@@ -880,41 +922,51 @@ function draw() {
     ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
-    if (s.shape === 'rect' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-      ctx.strokeRect(x, y, Math.abs(b.x - a.x), Math.abs(b.y - a.y));
-    } else if (s.shape === 'circle' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-      ctx.beginPath();
-      ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
-      ctx.stroke();
-    } else if (s.shape === 'diamond' && s.points && s.points.length >= 2) {
+    const rot = (s.rotation != null ? s.rotation : 0) * (Math.PI / 180);
+    const withRot = (draw) => {
+      if (!s.points || s.points.length < 2) return;
       const a = worldToCanvas(s.points[0].x, s.points[0].y);
       const b = worldToCanvas(s.points[1].x, s.points[1].y);
       const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
       const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
       const cx = x + w / 2, cy = y + h / 2;
-      ctx.beginPath();
-      ctx.moveTo(cx, y);
-      ctx.lineTo(x + w, cy);
-      ctx.lineTo(cx, y + h);
-      ctx.lineTo(x, cy);
-      ctx.closePath();
-      ctx.stroke();
+      if (rot !== 0) {
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(rot);
+        ctx.translate(-w / 2, -h / 2);
+        draw(0, 0, w, h);
+        ctx.restore();
+      } else {
+        draw(x, y, w, h);
+      }
+    };
+    if (s.shape === 'rect' && s.points && s.points.length >= 2) {
+      withRot((x, y, w, h) => { ctx.strokeRect(x, y, w, h); });
+    } else if (s.shape === 'circle' && s.points && s.points.length >= 2) {
+      withRot((x, y, w, h) => {
+        ctx.beginPath();
+        ctx.ellipse(x + w / 2, y + h / 2, w / 2, h / 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      });
+    } else if (s.shape === 'diamond' && s.points && s.points.length >= 2) {
+      withRot((x, y, w, h) => {
+        const cx = x + w / 2, cy = y + h / 2;
+        ctx.beginPath();
+        ctx.moveTo(cx, y);
+        ctx.lineTo(x + w, cy);
+        ctx.lineTo(cx, y + h);
+        ctx.lineTo(x, cy);
+        ctx.closePath();
+        ctx.stroke();
+      });
     } else if (s.shape === 'roundedRect' && s.points && s.points.length >= 2) {
-      const a = worldToCanvas(s.points[0].x, s.points[0].y);
-      const b = worldToCanvas(s.points[1].x, s.points[1].y);
-      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-      const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
-      const rad = Math.min(12, w / 4, h / 4);
-      ctx.beginPath();
-      ctx.roundRect(x, y, w, h, rad);
-      ctx.stroke();
+      withRot((x, y, w, h) => {
+        const rad = Math.min(12, w / 4, h / 4);
+        ctx.beginPath();
+        ctx.roundRect(x, y, w, h, rad);
+        ctx.stroke();
+      });
     } else if (s.points && s.points.length >= 2) {
       const p0 = worldToCanvas(s.points[0].x, s.points[0].y);
       ctx.beginPath();
@@ -930,14 +982,26 @@ function draw() {
   selectedFrameIds.forEach((frameId) => {
     const f = frames.find((x) => x.id === frameId);
     if (!f) return;
+    const w = f.width || FRAME_DEFAULT_W, h = f.height || FRAME_DEFAULT_H;
     const a = worldToCanvas(f.x, f.y);
-    const b = worldToCanvas(f.x + (f.width || FRAME_DEFAULT_W), f.y + (f.height || FRAME_DEFAULT_H));
-    const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
-    const w = Math.abs(b.x - a.x), h = Math.abs(b.y - a.y);
+    const b = worldToCanvas(f.x + w, f.y + h);
+    const cx = (a.x + b.x) / 2, cy = (a.y + b.y) / 2;
+    const rw = Math.abs(b.x - a.x), rh = Math.abs(b.y - a.y);
+    const rot = (f.rotation != null ? f.rotation : 0) * (Math.PI / 180);
     ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)';
     ctx.lineWidth = 2;
     ctx.setLineDash([6, 4]);
-    ctx.strokeRect(x, y, w, h);
+    if (rot !== 0) {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.rotate(rot);
+      ctx.translate(-rw / 2, -rh / 2);
+      ctx.strokeRect(0, 0, rw, rh);
+      ctx.restore();
+    } else {
+      const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+      ctx.strokeRect(x, y, rw, rh);
+    }
     ctx.setLineDash([]);
   });
 
@@ -1332,6 +1396,14 @@ function distPointToSegment(px, py, x1, y1, x2, y2) {
   return Math.hypot(px - nx, py - ny);
 }
 
+/** Rotate point (px,py) by deg degrees around (cx,cy). */
+function rotatePointAround(cx, cy, px, py, deg) {
+  const rad = (deg * Math.PI) / 180;
+  const cos = Math.cos(rad), sin = Math.sin(rad);
+  const dx = px - cx, dy = py - cy;
+  return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
+}
+
 function pointInRect(px, py, p1, p2) {
   const x1 = Math.min(p1.x, p2.x), x2 = Math.max(p1.x, p2.x);
   const y1 = Math.min(p1.y, p2.y), y2 = Math.max(p1.y, p2.y);
@@ -1376,22 +1448,27 @@ function pointInRoundedRect(px, py, p1, p2, radius = 12) {
 function getStrokesHitByPoint(px, py, radius) {
   const r = radius ?? ERASER_RADIUS;
   const hit = new Set();
-  const checkStroke = (points, strokeId, shape) => {
+  const checkStroke = (points, strokeId, shape, rotation) => {
     if (!points || points.length < 2) return;
+    const rot = rotation != null ? rotation : 0;
+    const p1 = points[0], p2 = points[1];
+    const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2;
+    const qx = rot !== 0 ? rotatePointAround(cx, cy, px, py, -rot).x : px;
+    const qy = rot !== 0 ? rotatePointAround(cx, cy, px, py, -rot).y : py;
     if (shape === 'rect') {
-      if (pointInRect(px, py, points[0], points[1])) hit.add(strokeId);
+      if (pointInRect(qx, qy, points[0], points[1])) hit.add(strokeId);
       return;
     }
     if (shape === 'circle') {
-      if (pointInEllipse(px, py, points[0], points[1])) hit.add(strokeId);
+      if (pointInEllipse(qx, qy, points[0], points[1])) hit.add(strokeId);
       return;
     }
     if (shape === 'diamond') {
-      if (pointInDiamond(px, py, points[0], points[1])) hit.add(strokeId);
+      if (pointInDiamond(qx, qy, points[0], points[1])) hit.add(strokeId);
       return;
     }
     if (shape === 'roundedRect') {
-      if (pointInRoundedRect(px, py, points[0], points[1])) hit.add(strokeId);
+      if (pointInRoundedRect(qx, qy, points[0], points[1])) hit.add(strokeId);
       return;
     }
     for (let i = 0; i < points.length - 1; i++) {
@@ -1401,7 +1478,7 @@ function getStrokesHitByPoint(px, py, radius) {
       }
     }
   };
-  strokes.forEach((s) => checkStroke(s.points, s.strokeId, s.shape));
+  strokes.forEach((s) => checkStroke(s.points, s.strokeId, s.shape, s.rotation));
   pending.forEach((points, strokeId) => checkStroke(points, strokeId, undefined));
   return hit;
 }
@@ -1424,7 +1501,10 @@ function getFrameAtPoint(px, py) {
   for (let i = frames.length - 1; i >= 0; i--) {
     const f = frames[i];
     const w = f.width || FRAME_DEFAULT_W, h = f.height || FRAME_DEFAULT_H;
-    if (px >= f.x && px <= f.x + w && py >= f.y && py <= f.y + h) return f.id;
+    const cx = f.x + w / 2, cy = f.y + h / 2;
+    const rot = f.rotation != null ? f.rotation : 0;
+    const local = rot !== 0 ? rotatePointAround(cx, cy, px, py, -rot) : { x: px, y: py };
+    if (local.x >= f.x && local.x <= f.x + w && local.y >= f.y && local.y <= f.y + h) return f.id;
   }
   return null;
 }
@@ -1529,6 +1609,47 @@ function addToSelection(type, id) {
 }
 
 const PASTE_OFFSET = 30;
+
+function rotateSelection(angleDeg) {
+  if (!ws || ws.readyState !== 1) return;
+  const hasSelection = selectedStickyIds.size || selectedStrokeIds.size || selectedTextIds.size || selectedFrameIds.size;
+  if (!hasSelection) return;
+  selectedFrameIds.forEach((id) => {
+    const f = frames.find((x) => x.id === id);
+    if (f) {
+      const rot = ((f.rotation != null ? f.rotation : 0) + angleDeg) % 360;
+      f.rotation = rot;
+      ws.send(JSON.stringify({ type: 'UPDATE_FRAME', id, rotation: rot }));
+    }
+  });
+  selectedStrokeIds.forEach((strokeId) => {
+    const s = strokes.find((x) => x.strokeId === strokeId);
+    if (s && ['rect', 'circle', 'diamond', 'roundedRect'].includes(s.shape)) {
+      const rot = ((s.rotation != null ? s.rotation : 0) + angleDeg) % 360;
+      s.rotation = rot;
+      ws.send(JSON.stringify({ type: 'SET_STROKE_ROTATION', strokeId, rotation: rot }));
+    }
+  });
+  selectedStickyIds.forEach((id) => {
+    const s = stickies.find((x) => x.id === id);
+    if (s) {
+      const rot = ((s.rotation != null ? s.rotation : 0) + angleDeg) % 360;
+      s.rotation = rot;
+      ws.send(JSON.stringify({ type: 'UPDATE_STICKY', id, rotation: rot }));
+    }
+  });
+  selectedTextIds.forEach((id) => {
+    const el = textElements.find((x) => x.id === id);
+    if (el) {
+      const rot = ((el.rotation != null ? el.rotation : 0) + angleDeg) % 360;
+      el.rotation = rot;
+      ws.send(JSON.stringify({ type: 'UPDATE_TEXT_ELEMENT', id, rotation: rot }));
+    }
+  });
+  renderStickies();
+  renderTextElements();
+  draw();
+}
 
 function deleteSelection() {
   if (!ws || ws.readyState !== 1) return;
@@ -1696,6 +1817,8 @@ document.getElementById('tool-rect').addEventListener('click', () => setTool('re
 document.getElementById('tool-circle').addEventListener('click', () => setTool('circle'));
 document.getElementById('tool-arrow').addEventListener('click', () => setTool('arrow'));
 document.getElementById('tool-text').addEventListener('click', () => setTool('text'));
+document.getElementById('rotate-left').addEventListener('click', () => rotateSelection(-15));
+document.getElementById('rotate-right').addEventListener('click', () => rotateSelection(15));
 
 function setSelectedColor(hex) {
   selectedColor = hex;
